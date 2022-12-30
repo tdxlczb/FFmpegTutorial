@@ -1,0 +1,27 @@
+cmake_minimum_required(VERSION 3.8)
+
+function(target_nuget target visability id version)
+    set(nuget_packages_dir ${CMAKE_SOURCE_DIR}/packages)
+    if (CMAKE_GENERATOR MATCHES "Visual Studio.*")
+        set(nuget_targets_path ${nuget_packages_dir}/${id}.${version}/build/native/${id}.targets)
+
+        if(EXISTS ${nuget_targets_path})
+            target_link_libraries(${target} ${visability} ${nuget_targets_path})
+            message(STATUS "${nuget_targets_path} exists, skipped nuget install")
+            return()
+        endif()
+
+        unset(nuget_cmd)
+        list(APPEND nuget_cmd install ${id} -Prerelease -Version ${version} -OutputDirectory ${nuget_packages_dir})
+        message(STATUS "excute nuget ${nuget_cmd}")
+        execute_process(COMMAND nuget ${nuget_cmd} RESULT_VARIABLE NUGET_RESULT ENCODING AUTO)
+
+        if (NUGET_RESULT EQUAL 0)
+            target_link_libraries(${target} ${visability} ${nuget_targets_path})
+        else()
+            message(FATAL_ERROR "nuget excute fail")
+        endif()
+    else()
+        message(FATAL_ERROR "target_nuget can only use with Visual Studio generators")
+    endif()
+endfunction()
