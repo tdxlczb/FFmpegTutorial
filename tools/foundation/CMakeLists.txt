@@ -1,0 +1,14 @@
+﻿set(TARGET_NAME foundation)
+
+add_library(${TARGET_NAME} STATIC)
+
+file(GLOB_RECURSE ${TARGET_NAME}_SOURCES FOLLOW_SYMLINKS LIST_DIRECTORIES false CONFIGURE_DEPENDS
+     *.h
+     *.cpp
+)
+source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${${TARGET_NAME}_SOURCES})
+target_sources(${TARGET_NAME} PRIVATE ${${TARGET_NAME}_SOURCES})
+
+set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME ${TARGET_NAME}$<$<CONFIG:Debug>:d>)
+
+target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
