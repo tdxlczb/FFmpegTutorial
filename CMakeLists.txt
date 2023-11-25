@@ -56,13 +56,13 @@ MESSAGE(STATUS "FFMPEG_LIB = ${FFMPEG_LIB}")
 MESSAGE(STATUS "FFMPEG_BIN = ${FFMPEG_BIN}")
 
 set(TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
-set(TUTORIAL_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tutorial)
+set(TUTORIALS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tutorials)
 
 add_subdirectory(tools)
-add_subdirectory(tutorial)
+add_subdirectory(tutorials)
 
 #设置开启使用目录
 SET_PROPERTY(GLOBAL PROPERTY USE_FOLDERS ON)
 #添加目录
-#SET_PROPERTY(TARGET tutorial PROPERTY FOLDER "Tutorial")
+#SET_PROPERTY(TARGET tutorials PROPERTY FOLDER "tutorials")
 
