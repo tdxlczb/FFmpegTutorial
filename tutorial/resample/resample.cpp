@@ -15,7 +15,7 @@ extern "C" {
 
 #include "audio_resample.h"
 
-void audio_resample_test()
+static void audio_resample_test()
 {
     //输入文件和参数
     FILE* in_file = fopen("E:/res/pcm_s24le_1_48000_1.pcm", "rb");
@@ -71,7 +71,7 @@ void audio_resample_test()
 
 }
 
-void resample_test()
+static void resample_test()
 {
     //输入文件和参数
     FILE* in_file = fopen("E:/res/pcm_s32le_1_48000_4.pcm", "rb");

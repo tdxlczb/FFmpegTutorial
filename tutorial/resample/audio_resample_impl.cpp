@@ -1,8 +1,8 @@
 ﻿#include "audio_resample_impl.h"
 #include <string>
+#include <foundation/byte/byte_array_convert.h>
+#include <foundation/byte/int24_t.h>
 #include "flexible_buffer.h"
-#include "int24_t.h"
-#include "array_convert.h"
 
 #define INT24_CONVERT_INT32
 //#define INT24_CONVERT_FLOAT
