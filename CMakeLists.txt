@@ -12,6 +12,13 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include(cmake/install_helper.cmake)
 include(cmake/nuget.cmake)
 
+set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/$<$<CONFIG:Release>:Release>$<$<CONFIG:Debug>:Debug>)
+set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/$<$<CONFIG:Release>:Release>$<$<CONFIG:Debug>:Debug>)
+set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_LIBRARY_OUTPUT_DIRECTORY})
+set(CURRENT_OUTPUT_DIRECTORY ${CMAKE_RUNTIME_OUTPUT_DIRECTORY})
+
+message(STATUS "output dir = ${CURRENT_OUTPUT_DIRECTORY}")
+
 if(MSVC)
     add_compile_options(/MP) # 并行编译
 
@@ -51,9 +58,9 @@ elseif(USE_FFMPEG_5_1)
     set(FFMPEG_BIN ${FFMPEG_DIR}/ffmpeg-5.1.4/bin)
 endif()
 
-MESSAGE(STATUS "FFMPEG_INC = ${FFMPEG_INC}")
-MESSAGE(STATUS "FFMPEG_LIB = ${FFMPEG_LIB}")
-MESSAGE(STATUS "FFMPEG_BIN = ${FFMPEG_BIN}")
+message(STATUS "FFMPEG_INC = ${FFMPEG_INC}")
+message(STATUS "FFMPEG_LIB = ${FFMPEG_LIB}")
+message(STATUS "FFMPEG_BIN = ${FFMPEG_BIN}")
 
 set(TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
 set(TUTORIALS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tutorials)
@@ -62,7 +69,7 @@ add_subdirectory(tools)
 add_subdirectory(tutorials)
 
 #设置开启使用目录
-SET_PROPERTY(GLOBAL PROPERTY USE_FOLDERS ON)
+set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 #添加目录
-#SET_PROPERTY(TARGET tutorials PROPERTY FOLDER "tutorials")
+#set_property(TARGET tutorials PROPERTY FOLDER "tutorials")
 
