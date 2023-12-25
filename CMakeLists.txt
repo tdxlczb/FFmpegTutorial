@@ -33,6 +33,7 @@ if(MSVC)
     # 从 VS 默认的项目的配置中抠出来的
     add_compile_options("$<$<NOT:$<CONFIG:Debug>>:/Oi>") # Intrinsic Function
     add_compile_options("$<$<NOT:$<CONFIG:Debug>>:/Gy>") # function-level linkage
+    add_compile_options("$<$<NOT:$<CONFIG:Debug>>:/Od>") # release 禁用优化
 
     # 更符合标准
     add_compile_options("/permissive-")

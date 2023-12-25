@@ -1,4 +1,4 @@
-﻿set(TARGET_NAME foundation)
+﻿set(TARGET_NAME logger)
 
 add_library(${TARGET_NAME} STATIC)
 

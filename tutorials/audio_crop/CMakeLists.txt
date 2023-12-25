@@ -21,7 +21,7 @@ target_link_libraries(${TARGET_NAME} PRIVATE swresample$<$<CONFIG:Debug>:d>)
 #target_link_libraries(${TARGET_NAME} PRIVATE swscale$<$<CONFIG:Debug>:d>)
 
 include_directories(${FOUNDATION_DIR}/include)
-target_link_libraries(${TARGET_NAME} PRIVATE foundation)
+target_link_libraries(${TARGET_NAME} PRIVATE foundation logger)
 
 # install_executable(${TARGET_NAME})
 # install(TARGETS ${TARGET_NAME} DESTINATION bin)
