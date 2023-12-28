@@ -8,8 +8,8 @@ rd /q /s output
 
 :: build
 @REM cmake -S . -B build -A Win32
-@REM cmake -S . -B build -A x64  -DUSE_FFMPEG_5_1=ON  -DCMAKE_INSTALL_PREFIX="%ROOT_DIR%\build"
-cmake -S . -B build -A x64  -DUSE_FFMPEG_5_1=ON
+@REM cmake -S . -B build -A x64 -DCMAKE_INSTALL_PREFIX="%ROOT_DIR%\build"
+cmake -S . -B build -A x64 
 
 @REM cmake --build build --config debug
 @REM cmake --build build --config release

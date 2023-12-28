@@ -32,4 +32,5 @@
 *.app
 
 build/
-ffmpeg/ffmpeg*
+public/third_party/ffmpeg/ffmpeg*
+public/third_party/opencv/opencv*

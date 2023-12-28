@@ -5,12 +5,11 @@ project(FFmpegTutorial
     LANGUAGES CXX
 )
 
+include(const.cmake)
+
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-include(cmake/install_helper.cmake)
-include(cmake/nuget.cmake)
 
 set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib/$<$<CONFIG:Release>:Release>$<$<CONFIG:Debug>:Debug>)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/$<$<CONFIG:Release>:Release>$<$<CONFIG:Debug>:Debug>)
@@ -46,31 +45,9 @@ if(MSVC)
     add_link_options("$<$<NOT:$<CONFIG:Debug>>:/OPT:ICF>")
 endif()
 
-set(FFMPEG_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ffmpeg)
-if(USE_FFMPEG_4_2)
-    add_definitions("-DUSE_FFMPEG_4_2")
-    set(FFMPEG_INC ${FFMPEG_DIR}/ffmpeg-4.2.1/dynamic/include)
-    set(FFMPEG_LIB ${FFMPEG_DIR}/ffmpeg-4.2.1/dynamic/lib/x86)
-    set(FFMPEG_BIN ${FFMPEG_DIR}/ffmpeg-4.2.1/dynamic/bin/x86)
-elseif(USE_FFMPEG_5_1)
-    add_definitions("-DUSE_FFMPEG_5_1")
-    set(FFMPEG_INC ${FFMPEG_DIR}/ffmpeg-5.1.4/include)
-    set(FFMPEG_LIB ${FFMPEG_DIR}/ffmpeg-5.1.4/lib)
-    set(FFMPEG_BIN ${FFMPEG_DIR}/ffmpeg-5.1.4/bin)
-endif()
-
-message(STATUS "FFMPEG_INC = ${FFMPEG_INC}")
-message(STATUS "FFMPEG_LIB = ${FFMPEG_LIB}")
-message(STATUS "FFMPEG_BIN = ${FFMPEG_BIN}")
-
-set(TOOLS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tools)
-set(TUTORIALS_DIR ${CMAKE_CURRENT_SOURCE_DIR}/tutorials)
-
-add_subdirectory(tools)
-add_subdirectory(tutorials)
-
 #设置开启使用目录
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
-#添加目录
-#set_property(TARGET tutorials PROPERTY FOLDER "tutorials")
+
+add_subdirectory(public)
+add_subdirectory(tutorials)
 
