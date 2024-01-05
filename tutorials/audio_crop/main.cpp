@@ -214,7 +214,9 @@ int main()
     //std::string filePath = "E:\\res\\test-wav\\1701047259978_141\\1701047259978_141_0_1701047320961.ts";
     //std::string filePath = "E:\\res\\test-wav\\0.wav";
     //std::string filePath = "E:\\res\\HOYO-MiX-DaCapo.flac";
-    std::string filePath = "E:\\res\\output.flac";
-    AudioDecode(filePath, nullptr, true);
+    std::string filePath  = "E:\\res\\output.flac";
+    std::string filePath1 = "E:\\res\\test-wav\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
+    AudioDecode(filePath1, nullptr, true);
+    getchar();
     return 0;
 }

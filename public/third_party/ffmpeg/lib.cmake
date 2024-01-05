@@ -19,6 +19,10 @@ if(WIN32)
     target_link_libraries(${TARGET_NAME} PRIVATE swresample$<$<CONFIG:Debug>:d>)
     target_link_libraries(${TARGET_NAME} PRIVATE swscale$<$<CONFIG:Debug>:d>)
 
-    install(DIRECTORY ${FFMPEG_BIN}/ DESTINATION ${CURRENT_OUTPUT_DIRECTORY})
+    file(GLOB LIB_FILES "${FFMPEG_BIN}/*.dll")
+    get_target_property(OUTPUT_DIR ${TARGET_NAME} RUNTIME_OUTPUT_DIRECTORY)
+    install(FILES ${LIB_FILES} DESTINATION ${OUTPUT_DIR}) # 安装到输出目录
+    # install(FILES ${LIB_FILES} DESTINATION $<CONFIG>) # 安装到install-prefix指定的目录
+    # install(DIRECTORY ${FFMPEG_BIN}/ DESTINATION ${OUTPUT_DIR})
 endif()
 endmacro()

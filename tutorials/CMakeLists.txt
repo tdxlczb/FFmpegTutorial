@@ -1,3 +1,4 @@
 ﻿
 add_subdirectory(audio_crop)
+add_subdirectory(media_get_frame)
 add_subdirectory(resample)

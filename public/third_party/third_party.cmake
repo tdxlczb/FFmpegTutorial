@@ -5,3 +5,4 @@ macro(INCLUDE_LIB dirname)
 endmacro()
 
 INCLUDE_LIB(ffmpeg)
+INCLUDE_LIB(opencv)
