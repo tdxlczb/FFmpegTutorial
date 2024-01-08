@@ -13,9 +13,10 @@ target_sources(${TARGET_NAME} PRIVATE ${${TARGET_NAME}_SOURCES})
 # 将模块添加到自定义目录中
 set_property(TARGET ${TARGET_NAME} PROPERTY FOLDER "tutorials")
 
-target_link_libraries(${TARGET_NAME} PRIVATE foundation logger)
+target_link_libraries(${TARGET_NAME} PRIVATE foundation)
 
 INSTALL_FFMPEG(${TARGET_NAME})
+INSTALL_LOGGER(${TARGET_NAME})
 
 # install_executable(${TARGET_NAME})
 # install(TARGETS ${TARGET_NAME} DESTINATION bin)

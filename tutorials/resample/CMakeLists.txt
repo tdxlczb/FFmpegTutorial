@@ -16,5 +16,6 @@ set_property(TARGET ${TARGET_NAME} PROPERTY FOLDER "tutorials")
 target_link_libraries(${TARGET_NAME} PRIVATE foundation)
 
 INSTALL_FFMPEG(${TARGET_NAME})
+INSTALL_LOGGER(${TARGET_NAME})
 
 # install_executable(${TARGET_NAME})

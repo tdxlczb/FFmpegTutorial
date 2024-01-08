@@ -24,5 +24,7 @@ if(WIN32)
     install(FILES ${LIB_FILES} DESTINATION ${OUTPUT_DIR}) # 安装到输出目录
     # install(FILES ${LIB_FILES} DESTINATION $<CONFIG>) # 安装到install-prefix指定的目录
     # install(DIRECTORY ${FFMPEG_BIN}/ DESTINATION ${OUTPUT_DIR})
+    
+    # message(STATUS "FFMPEG LIB_FILES=${LIB_FILES}")
 endif()
 endmacro()

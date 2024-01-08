@@ -1,4 +1,6 @@
-﻿set(TARGET_NAME foundation)
+﻿include(${THIRD_PARTY_DIR}/third_party.cmake)
+
+set(TARGET_NAME foundation)
 
 file(GLOB_RECURSE ${TARGET_NAME}_SOURCES FOLLOW_SYMLINKS LIST_DIRECTORIES false CONFIGURE_DEPENDS
      *.h
@@ -12,5 +14,8 @@ target_sources(${TARGET_NAME} PRIVATE ${${TARGET_NAME}_SOURCES})
 set_property(TARGET ${TARGET_NAME} PROPERTY FOLDER "ability")
 set_target_properties(${TARGET_NAME} PROPERTIES OUTPUT_NAME ${TARGET_NAME}$<$<CONFIG:Debug>:d>)
 
-target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_include_directories(${TARGET_NAME} PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
+INSTALL_LOGGER(${TARGET_NAME}) 
+
+add_definitions("-D_SILENCE_EXPERIMENTAL_FILESYSTEM_DEPRECATION_WARNING")

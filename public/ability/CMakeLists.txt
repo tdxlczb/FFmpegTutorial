@@ -1,2 +1,1 @@
 add_subdirectory(foundation)
-add_subdirectory(logger)
