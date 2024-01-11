@@ -161,6 +161,7 @@ int AudioDecode(const std::string& filePath, const DecodeCallback& callback, boo
                     if (callback)
                         callback(resampledFrame->data[0], out_spb * out_channels * out_samples, false);
 
+                    av_freep(&resampledFrame->data[0]);
                     av_frame_free(&resampledFrame);
                 }
                 else
@@ -187,6 +188,7 @@ int AudioDecode(const std::string& filePath, const DecodeCallback& callback, boo
         if (callback)
             callback(cache_out_frame->data[0], out_spb * out_channels * cache_out_samples, true);
 
+        av_freep(&cache_out_frame->data[0]);
         av_frame_free(&cache_out_frame);
         swr_free(&swrContext);
     }
@@ -208,15 +210,71 @@ int AudioDecode(const std::string& filePath, const DecodeCallback& callback, boo
 
     return 0;
 }
+#include <fstream>
 
 int main()
 {
     //std::string filePath = "E:\\res\\test-wav\\1701047259978_141\\1701047259978_141_0_1701047320961.ts";
     //std::string filePath = "E:\\res\\test-wav\\0.wav";
     //std::string filePath = "E:\\res\\HOYO-MiX-DaCapo.flac";
-    std::string filePath  = "E:\\res\\output.flac";
+    std::string filePath5 = "E:\\res\\output.flac";
     std::string filePath1 = "E:\\res\\test-wav\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
-    AudioDecode(filePath1, nullptr, true);
+    std::string filePath2 = R"(E:\res\test-wav\test.mp4)";
+    for (size_t i = 0; i < 10; i++)
+    {
+        AudioDecode(filePath2, nullptr, false);
+    }
     getchar();
+    return 0;
+}
+
+#include <iostream>
+#include <cstdlib>
+#include <sstream>
+#include <iomanip>
+#include <fstream>
+
+std::string SecondsToStr(uint64_t time)
+{
+    int hours   = time / 3600;
+    int minutes = (time - hours * 3600) / 60;
+    int seconds = (time - hours * 3600 - minutes * 60);
+
+    std::stringstream ss;
+    ss << std::setfill('0') << std::setw(2) << hours << ":" << std::setfill('0') << std::setw(2) << minutes << ":" << std::setfill('0')
+       << std::setw(2) << seconds;
+    return ss.str();
+}
+
+int main2()
+{
+    std::string   filePath = "E:/res/test-wav/student.mp4";
+    std::string   destDir  = "E:/res/test-wav/student";
+    std::string   scpPath  = "E:/res/test-wav/student/wav.scp";
+    std::ofstream ofs(scpPath);
+
+    uint64_t st = 0;
+    for (size_t i = 0; i < 100; i++)
+    {
+        std::stringstream ss;
+        ss << std::setfill('0') << std::setw(3) << i + 1;
+        std::string destPath = destDir + "/" + ss.str() + ".wav";
+
+        std::string start = SecondsToStr(st);
+        st += 10;
+        std::string command = "ffmpeg -i " + filePath + " -ss " + start + " -t 00:00:10 -vn -acodec pcm_s16le -ar 16000 -ac 1 -f wav " + destPath;
+        int         result  = std::system(command.c_str());
+        if (result == 0)
+        {
+            std::cout << "Command executed successfully" << std::endl;
+            std::string data = "1   " + destPath + "\n";
+            ofs.write(data.c_str(), data.length());
+        }
+        else
+        {
+            std::cerr << "Command execution failed" << std::endl;
+        }
+    }
+    //ffmpeg -i input.mp4 -ss 00:02:00 -t 00:01:00 -vn -acodec pcm_s16le -ar 16000 -ac 1 -f wav output.wav
     return 0;
 }

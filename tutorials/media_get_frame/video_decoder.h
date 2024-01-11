@@ -1,4 +1,5 @@
 ﻿#pragma once
+#include <string>
 #include <mutex>
 #include <thread>
 #include <queue>
@@ -60,3 +61,7 @@ private:
     const size_t _frameInterval = 0; //取帧间隔, 每几帧取一帧, 为0时不取帧, 为1时每帧都取
     int _maxCacheFrameSize = -1; //-1表示无上限，缓存队列的数据，8k视频一帧占用48M，缓存太多帧会导致内存占用太大
 };
+
+bool VideoToImages(const std::string& filePath, const std::string& outputFolder);
+
+void VideoToImages2(const std::string& filePath, const std::string& outputFolder);
