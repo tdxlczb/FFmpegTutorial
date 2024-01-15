@@ -5,6 +5,7 @@
 #include <fstream>
 #include <functional>
 #include <logger/logger.h>
+#include <foundation/file/file_utils.h>
 
 #include "video_decoder.h"
 #include "audio_decoder.h"
@@ -36,7 +37,7 @@ int main()
     std::string dir5 = R"(E:\res\test-wav\1701047259978_141)";
 
     std::vector<std::string> fileList;
-    GetFileList(dir5, fileList, "*.ts");
+    foundation::FileUtils::GetFileList2(dir5, fileList, "*.ts");
 
     int index = 0;
     for (size_t i = 0; i < fileList.size(); i++)

@@ -1,6 +1,6 @@
 ﻿include(${THIRD_PARTY_DIR}/third_party.cmake)
 
-set(TARGET_NAME audio_crop)
+set(TARGET_NAME audio_decode)
 
 file(GLOB_RECURSE ${TARGET_NAME}_SOURCES FOLLOW_SYMLINKS LIST_DIRECTORIES false CONFIGURE_DEPENDS
      *.h

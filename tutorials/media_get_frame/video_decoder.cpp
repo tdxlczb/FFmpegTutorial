@@ -17,6 +17,9 @@ VideoReader::VideoReader(const std::string& videoFile, size_t frameInterval, int
     , _frameInterval(frameInterval)
     , _maxCacheFrameSize(maxCacheFrameSize)
 {
+    // 初始化FFmpeg
+    avformat_network_init();
+
     _isOpen = OpenFile(videoFile);
     if (_isOpen && frameInterval > 0)
     {
@@ -60,14 +63,12 @@ void VideoReader::StopDecoding()
 bool VideoReader::OpenFile(const std::string& videoFile)
 {
     printf("INFO: [Video Decoder] Open video: %s\n", videoFile.c_str());
-    // 初始化FFmpeg
-    avformat_network_init();
 
     // 打开视频文件
     if (avformat_open_input(&_formatContext, videoFile.c_str(), nullptr, nullptr) != 0)
     {
         printf("ERROR: [Video Decoder] Failed to open video file: %s\n", videoFile.c_str());
-        avformat_network_deinit();
+        //avformat_network_deinit();
         return false;
     }
 
@@ -76,7 +77,7 @@ bool VideoReader::OpenFile(const std::string& videoFile)
     {
         printf("ERROR: [Video Decoder] Failed to find stream information\n");
         avformat_close_input(&_formatContext);
-        avformat_network_deinit();
+        //avformat_network_deinit();
         return false;
     }
 
@@ -100,7 +101,7 @@ bool VideoReader::OpenFile(const std::string& videoFile)
     {
         printf("ERROR: [Video Decoder] Failed to find video stream\n");
         avformat_close_input(&_formatContext);
-        avformat_network_deinit();
+        //avformat_network_deinit();
         return false;
     }
     AVStream* videoStream = _formatContext->streams[_videoStreamIndex];
@@ -116,7 +117,7 @@ bool VideoReader::OpenFile(const std::string& videoFile)
         printf("ERROR: [Video Decoder] Failed to find video decoder\n");
         avcodec_free_context(&_codecContext);
         avformat_close_input(&_formatContext);
-        avformat_network_deinit();
+        //avformat_network_deinit();
         return false;
     }
 
@@ -127,7 +128,7 @@ bool VideoReader::OpenFile(const std::string& videoFile)
         printf("ERROR: [Video Decoder] Failed to copy codec parameters to codec context\n");
         avcodec_free_context(&_codecContext);
         avformat_close_input(&_formatContext);
-        avformat_network_deinit();
+        //avformat_network_deinit();
         return false;
     }
     if (avcodec_open2(_codecContext, _codec, nullptr) != 0)
@@ -135,7 +136,7 @@ bool VideoReader::OpenFile(const std::string& videoFile)
         printf("ERROR: [Video Decoder] Failed to open video decoder\n");
         avcodec_free_context(&_codecContext);
         avformat_close_input(&_formatContext);
-        avformat_network_deinit();
+        //avformat_network_deinit();
         return false;
     }
     if (_codecContext->width <= 0 || _codecContext->height <= 0 || _codecContext->pix_fmt == AV_PIX_FMT_NONE)
@@ -143,7 +144,7 @@ bool VideoReader::OpenFile(const std::string& videoFile)
         printf("ERROR: [Video Decoder] open video decoder error\n");
         avcodec_free_context(&_codecContext);
         avformat_close_input(&_formatContext);
-        avformat_network_deinit();
+        //avformat_network_deinit();
         return false;
     }
     return true;
