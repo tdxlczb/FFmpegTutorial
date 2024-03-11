@@ -39,9 +39,7 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, bo
         avformat_network_deinit();
         return false;
     }
-    avformat_close_input(&formatContext);
-    avformat_network_deinit();
-    return false;
+
     AVCodec* codec            = nullptr;
     int      audioStreamIndex = av_find_best_stream(formatContext, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
     if (audioStreamIndex < 0)
@@ -245,29 +243,29 @@ int main()
     //InitLogger();
     LOG_INFO << "==================================";
     //test();
-    std::string output    = "E:\\res\\test-wav\\output";
-    std::string filePath  = "E:\\res\\test-wav\\test.mp4";
-    std::string filePath1 = "E:\\res\\test-wav\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
-    std::string filePath2 = "E:\\res\\test-wav\\1704177600496_4_0_13348651242807.ts";
-    std::string filePath3 = "E:\\res\\test-wav\\1703762903540_2\\1703762903540_2_0_13348236794018.ts";
+    std::string output    = "E:\\res\\mca\\output";
+    std::string filePath  = "E:\\res\\mca\\test.mp4";
+    std::string filePath1 = "E:\\res\\mca\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
+    std::string filePath2 = "E:\\res\\mca\\1704177600496_4_0_13348651242807.ts";
+    std::string filePath3 = "E:\\res\\mca\\1703762903540_2\\1703762903540_2_0_13348236794018.ts";
     std::string filePath4 =
-        R"(E:\res\test-wav\EdulyseEdgeWindows\dvrStorage\media\edulyse-edge-windows\1704196735104_2\1704196735104_2_0_13348670347631.ts)";
-    std::string filePath5 = R"(E:\res\test-wav\1704368128747_2\1704368128747_2_0_13348841750212.ts)";
-    std::string filePath6 = R"(E:\res\test-wav\d6bda0290395c01e874326aa364426c3_SK_3999470_4003600.wav)";
-    //std::string filePath = "E:\\res\\test-wav\\1701047259978_141\\1701047259978_141_0_1701047320961.ts";
-    //std::string filePath = "E:\\res\\test-wav\\0.wav";
+        R"(E:\res\mca\EdulyseEdgeWindows\dvrStorage\media\edulyse-edge-windows\1704196735104_2\1704196735104_2_0_13348670347631.ts)";
+    std::string filePath5 = R"(E:\res\mca\1704368128747_2\1704368128747_2_0_13348841750212.ts)";
+    std::string filePath6 = R"(E:\res\mca\d6bda0290395c01e874326aa364426c3_SK_3999470_4003600.wav)";
+    //std::string filePath = "E:\\res\\mca\\1701047259978_141\\1701047259978_141_0_1701047320961.ts";
+    //std::string filePath = "E:\\res\\mca\\0.wav";
     //std::string filePath = "E:\\res\\HOYO-MiX-DaCapo.flac";
     //std::string filePath5 = "E:\\res\\output.flac";
-    //std::string filePath1 = "E:\\res\\test-wav\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
-    //std::string filePath2 = R"(E:\res\test-wav\test.mp4)";
+    //std::string filePath1 = "E:\\res\\mca\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
+    //std::string filePath2 = R"(E:\res\mca\test.mp4)";
 
     //AudioDecode(filePath6, NULL, true);
     //getchar();
 
-    std::string dir1 = R"(E:\res\test-wav\dvrStorage1231\media\edulyse-edge-windows\1703591015324_6)";
-    std::string dir3 = R"(E:\res\test-wav\1703762903540_2)";
-    std::string dir4 = R"(E:\res\test-wav\EdulyseEdgeWindows\dvrStorage\media\edulyse-edge-windows\1704196735104_2)";
-    std::string dir5 = R"(E:\res\test-wav\1701047259978_141)";
+    std::string dir1 = R"(E:\res\mca\dvrStorage1231\media\edulyse-edge-windows\1703591015324_6)";
+    std::string dir3 = R"(E:\res\mca\1703762903540_2)";
+    std::string dir4 = R"(E:\res\mca\EdulyseEdgeWindows\dvrStorage\media\edulyse-edge-windows\1704196735104_2)";
+    std::string dir5 = R"(E:\res\mca\1701047259978_141)";
 
     std::vector<std::string> fileList;
     foundation::FileUtils::GetFileList2(dir5, fileList, "*.ts");
@@ -310,9 +308,9 @@ std::string SecondsToStr(uint64_t time)
 
 int main2()
 {
-    std::string   filePath = "E:/res/test-wav/student.mp4";
-    std::string   destDir  = "E:/res/test-wav/student";
-    std::string   scpPath  = "E:/res/test-wav/student/wav.scp";
+    std::string   filePath = "E:/res/mca/student.mp4";
+    std::string   destDir  = "E:/res/mca/student";
+    std::string   scpPath  = "E:/res/mca/student/wav.scp";
     std::ofstream ofs(scpPath);
 
     uint64_t st = 0;

@@ -16,28 +16,19 @@ int main()
     //InitLogger();
     LOG_INFO << "==================================";
     //test();
-    std::string output    = "E:\\res\\test-wav\\output";
-    std::string filePath  = "E:\\res\\test-wav\\test.mp4";
-    std::string filePath1 = "E:\\res\\test-wav\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
-    std::string filePath2 = "E:\\res\\test-wav\\1704177600496_4_0_13348651242807.ts";
-    std::string filePath3 = "E:\\res\\test-wav\\1703762903540_2\\1703762903540_2_0_13348236794018.ts";
-    std::string filePath4 =
-        R"(E:\res\test-wav\EdulyseEdgeWindows\dvrStorage\media\edulyse-edge-windows\1704196735104_2\1704196735104_2_0_13348670347631.ts)";
-    std::string filePath5 = R"(E:\res\test-wav\1704368128747_2\1704368128747_2_0_13348841750212.ts)";
-    std::string filePath6 = R"(E:\res\test-wav\d6bda0290395c01e874326aa364426c3_SK_3999470_4003600.wav)";
+    std::string output   = "E:\\res\\mca\\output";
+    std::string filePath = "E:\\res\\mca\\test.mp4";
 
-    //VideoToImages(filePath5, output);
-    //VideoToImages2(filePath1, output);
+    //VideoToImages(filePath, output);
+    //VideoToImages2(filePath, output);
     //AudioDecode(filePath6, NULL, true);
     //getchar();
 
-    std::string dir1 = R"(E:\res\test-wav\dvrStorage1231\media\edulyse-edge-windows\1703591015324_6)";
-    std::string dir3 = R"(E:\res\test-wav\1703762903540_2)";
-    std::string dir4 = R"(E:\res\test-wav\EdulyseEdgeWindows\dvrStorage\media\edulyse-edge-windows\1704196735104_2)";
-    std::string dir5 = R"(E:\res\test-wav\1701047259978_141)";
+    std::string dir  = R"(E:\res\mca\1703762903540_2)";
+    std::string dir1 = R"(E:\res\mca\1701047259978_141)";
 
     std::vector<std::string> fileList;
-    foundation::FileUtils::GetFileList2(dir5, fileList, "*.ts");
+    foundation::FileUtils::GetFileList2(dir1, fileList, "*.ts");
 
     int index = 0;
     for (size_t i = 0; i < fileList.size(); i++)

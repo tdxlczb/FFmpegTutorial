@@ -10,7 +10,7 @@ extern "C"
 }
 
 /*
-std::string filePath    = "E:\\res\\test-wav\\output.pcm";
+std::string filePath    = "E:\\res\\mca\\output.pcm";
 FILE*       file        = fopen(filePath.c_str(), "rb");
 int         readSamples = 16000 * 10;
 int16_t*    readBuffer  = new int16_t[readSamples];
