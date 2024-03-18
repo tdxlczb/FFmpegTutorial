@@ -28,6 +28,7 @@ if(MSVC)
     add_compile_options(/W4) # 新项目推荐使用的警告等级
 
     add_compile_options(/Zi) # pdb 格式
+    add_compile_options(/sdl) # sdl 检查
     
     # 额外优化
     # 从 VS 默认的项目的配置中抠出来的

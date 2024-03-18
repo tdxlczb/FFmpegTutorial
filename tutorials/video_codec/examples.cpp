@@ -2,7 +2,7 @@
 #include <iostream>
 #include <fstream>
 #include <logger/logger.h>
-
+#include <opencv2/opencv.hpp>
 extern "C"
 {
 #include <libavformat/avformat.h>
@@ -182,11 +182,11 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
 
                 int ret = sws_scale(sws_ctx, frame->data, frame->linesize, 0, codecContext->height, frameRGB->data, frameRGB->linesize);
 
-                // 保存图片
-                char filename[100];
-                sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frameIndex);
-                cv::Mat mat = cv::Mat(codecContext->height, codecContext->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
-                cv::imwrite(filename, mat);
+                //// 保存图片
+                //char filename[100];
+                //sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frameIndex);
+                //cv::Mat mat = cv::Mat(codecContext->height, codecContext->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
+                //cv::imwrite(filename, mat);
 
                 av_frame_unref(frame);
             }
@@ -424,4 +424,240 @@ bool H265TranscodeH264(const std::string& inputPath, const std::string& outputPa
     avformat_close_input(&formatContext);
     avformat_network_deinit();
     return true;
+}
+
+static AVPixelFormat      hw_pix_fmt;
+static enum AVPixelFormat get_hw_format(AVCodecContext* ctx, const enum AVPixelFormat* pix_fmts)
+{
+    const enum AVPixelFormat* p;
+
+    for (p = pix_fmts; *p != -1; p++)
+    {
+        if (*p == hw_pix_fmt)
+            return *p;
+    }
+
+    fprintf(stderr, "Failed to get HW surface format.\n");
+    return AV_PIX_FMT_NONE;
+}
+
+bool HWDeviceDecode(const std::string& filePath, const std::string& outputFolder, const std::string& deviceName, int threadCount)
+{
+    LOG_INFO << "start decode audio:" << filePath << ", device type:" << deviceName << std::endl;
+    avformat_network_init();
+
+    AVHWDeviceType type = av_hwdevice_find_type_by_name(deviceName.c_str());
+    if (type == AV_HWDEVICE_TYPE_NONE)
+    {
+        LOG_ERROR << "Device type is not supported:" << deviceName << std::endl;
+        return false;
+    }
+
+    // 打开视频文件
+    AVFormatContext* formatContext = nullptr;
+    if (avformat_open_input(&formatContext, filePath.c_str(), nullptr, nullptr) != 0)
+    {
+        LOG_ERROR << "avformat_open_input failed" << std::endl;
+        // 处理打开视频失败的情况
+        avformat_network_deinit();
+        return false;
+    }
+
+    // 获取视频流信息
+    if (avformat_find_stream_info(formatContext, nullptr) < 0)
+    {
+        LOG_ERROR << "avformat_find_stream_info failed" << std::endl;
+        // 处理获取视频流信息失败的情况
+        avformat_close_input(&formatContext);
+        avformat_network_deinit();
+        return false;
+    }
+
+    const AVCodec* decoder          = nullptr;
+    int            videoStreamIndex = av_find_best_stream(formatContext, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
+    if (videoStreamIndex < 0)
+    {
+        LOG_ERROR << "find stream failed" << std::endl;
+        // 处理未找到视频流的情况
+        avformat_close_input(&formatContext);
+        avformat_network_deinit();
+        return false;
+    }
+
+    for (int i = 0;; i++)
+    {
+        const AVCodecHWConfig* config = avcodec_get_hw_config(decoder, i);
+        if (!config)
+        {
+            LOG_ERROR << "Decoder: " << decoder->name << " does not support device type:" << av_hwdevice_get_type_name(type) << std::endl;
+            return false;
+        }
+        if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == type)
+        {
+            hw_pix_fmt = config->pix_fmt;
+            break;
+        }
+    }
+
+    // 获取视频流解码器参数
+    AVCodecParameters* codecParameters = formatContext->streams[videoStreamIndex]->codecpar;
+    // 创建解码器上下文
+    AVCodecContext*    codecContext    = avcodec_alloc_context3(decoder);
+    if (avcodec_parameters_to_context(codecContext, codecParameters) < 0)
+    {
+        LOG_ERROR << "avcodec_parameters_to_context failed" << std::endl;
+        avcodec_free_context(&codecContext);
+        avformat_close_input(&formatContext);
+        avformat_network_deinit();
+        return false;
+    }
+
+    codecContext->thread_count = threadCount;
+    codecContext->get_format   = get_hw_format;
+
+    AVBufferRef* hw_device_ctx = NULL;
+    if ((av_hwdevice_ctx_create(&hw_device_ctx, type, NULL, NULL, 0)) < 0)
+    {
+        LOG_ERROR << "Failed to create specified HW device" << std::endl;
+        return false;
+    }
+    codecContext->hw_device_ctx = av_buffer_ref(hw_device_ctx);
+
+    if (avcodec_open2(codecContext, decoder, nullptr) != 0)
+    {
+        LOG_ERROR << "avcodec_open2 failed" << std::endl;
+        avcodec_free_context(&codecContext);
+        avformat_close_input(&formatContext);
+        avformat_network_deinit();
+        return false;
+    }
+
+    if (codecContext->width <= 0 || codecContext->height <= 0 || codecContext->pix_fmt == AV_PIX_FMT_NONE)
+    {
+        LOG_ERROR << "codecContext data error" << std::endl;
+        avcodec_free_context(&codecContext);
+        avformat_close_input(&formatContext);
+        avformat_network_deinit();
+        return false;
+    }
+
+    AVStream* videoStream = formatContext->streams[videoStreamIndex];
+    auto      timeBase    = videoStream->time_base;
+    // 获取FPS
+    double    fps         = av_q2d(videoStream->avg_frame_rate);
+    // 获取总的帧数量
+    auto      frameCount  = videoStream->nb_frames;
+    int       gopSize     = codecContext->gop_size;
+
+    LOG_INFO << "fps=" << (int) fps << ", frameCount=" << frameCount << std::endl;
+
+    //SwsContext* sws_ctx = sws_getContext(
+    //    codecContext->width, codecContext->height, codecContext->pix_fmt, codecContext->width, codecContext->height, AV_PIX_FMT_BGR24, SWS_BILINEAR,
+    //    NULL, NULL, NULL
+    //);
+    ////使用sws_getContext会出现内存泄漏，使用sws_getCachedContext代替
+    SwsContext* sws_ctx = sws_getCachedContext(
+        NULL, codecContext->width, codecContext->height, AV_PIX_FMT_NV12, codecContext->width, codecContext->height, AV_PIX_FMT_BGR24, SWS_BILINEAR,
+        NULL, NULL, NULL
+    );
+    if (!sws_ctx)
+    {
+        LOG_ERROR << "sws_getCachedContext failed" << std::endl;
+        avcodec_free_context(&codecContext);
+        avformat_close_input(&formatContext);
+        avformat_network_deinit();
+        return false;
+    }
+    // 创建RGB视频帧
+    AVFrame* frameRGB = av_frame_alloc();
+    int      numBytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, codecContext->width, codecContext->height, AV_INPUT_BUFFER_PADDING_SIZE);
+    uint8_t* buffer   = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t)); //注意，这里给frameRGB申请的buffer，需要单独释放
+    av_image_fill_arrays(
+        frameRGB->data, frameRGB->linesize, buffer, AV_PIX_FMT_BGR24, codecContext->width, codecContext->height, AV_INPUT_BUFFER_PADDING_SIZE
+    );
+
+    //上面创建RGB视频帧的操作，可以用av_image_alloc替代
+    //av_image_alloc(frameRGB->data, frameRGB->linesize, codecContext->width, codecContext->height, AV_PIX_FMT_BGR24, AV_INPUT_BUFFER_PADDING_SIZE);
+
+    // 读取视频帧并保存为图片
+    int       frameIndex  = -1;
+    int       packetIndex = -1;
+    AVPacket* packet      = av_packet_alloc();
+    AVFrame*  frame       = av_frame_alloc();
+    AVFrame*  sw_frame    = av_frame_alloc();
+    while (av_read_frame(formatContext, packet) >= 0)
+    {
+        if (packet->stream_index == videoStreamIndex)
+        {
+            packetIndex++;
+            {
+                auto duration = std::chrono::system_clock::now().time_since_epoch();
+                auto ts       = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+                LOG_INFO << "packetIndex:" << packetIndex << ", packetFlags:" << packet->flags << ", ts:" << ts << std::endl;
+            }
+            //if (packet.flags != AV_PKT_FLAG_KEY)
+            //{
+            //    continue;
+            //}
+
+            if (avcodec_send_packet(codecContext, packet) < 0)
+            {
+                // 处理发送数据包到解码器失败的情况
+                av_packet_unref(packet);
+                break;
+            }
+            while (avcodec_receive_frame(codecContext, frame) >= 0)
+            {
+                frameIndex++;
+                {
+                    auto duration = std::chrono::system_clock::now().time_since_epoch();
+                    auto ts       = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+                    LOG_INFO << "packetIndex:" << packetIndex << ", frameIndex:" << frameIndex << ", keyFrame:" << frame->key_frame << ", ts:" << ts
+                             << std::endl;
+                }
+                if (frame->format == hw_pix_fmt)
+                {
+                    /* retrieve data from GPU to CPU */
+                    if (av_hwframe_transfer_data(sw_frame, frame, 0) < 0)
+                    {
+                        LOG_ERROR << "Error transferring the data to system memory" << std::endl;
+                        continue;
+                    }
+                    int ret = sws_scale(sws_ctx, sw_frame->data, sw_frame->linesize, 0, codecContext->height, frameRGB->data, frameRGB->linesize);
+                    LOG_INFO << "sws_scale ret:" << ret << std::endl;
+                }
+                else
+                {
+                    int ret = sws_scale(sws_ctx, frame->data, frame->linesize, 0, codecContext->height, frameRGB->data, frameRGB->linesize);
+                    LOG_INFO << "sws_scale ret:" << ret << std::endl;
+                }
+
+                // 保存图片
+                char filename[100];
+                sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frameIndex);
+                cv::Mat mat = cv::Mat(codecContext->height, codecContext->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
+                cv::imwrite(filename, mat);
+
+                av_frame_unref(frame);
+                av_frame_unref(sw_frame);
+            }
+            av_frame_unref(frame);
+            av_frame_unref(sw_frame);
+        }
+        av_packet_unref(packet);
+    }
+    av_packet_unref(packet);
+    av_packet_free(&packet);
+    av_frame_free(&frame);
+    av_frame_free(&sw_frame);
+    av_frame_free(&frameRGB);
+    av_freep(&buffer); //释放av_malloc申请的buffer，需要单独释放
+
+    av_buffer_unref(&hw_device_ctx);
+    sws_freeContext(sws_ctx);
+    avcodec_free_context(&codecContext);
+    avformat_close_input(&formatContext);
+    avformat_network_deinit();
+
+    return false;
 }

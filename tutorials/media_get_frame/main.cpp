@@ -17,9 +17,9 @@ int main()
     LOG_INFO << "==================================";
     //test();
     std::string output   = "E:\\res\\mca\\output";
-    std::string filePath = "E:\\res\\mca\\test.mp4";
+    std::string filePath = "E:\\res\\mca\\test.h265";
 
-    //VideoToImages(filePath, output);
+    VideoToImages(filePath, output);
     //VideoToImages2(filePath, output);
     //AudioDecode(filePath6, NULL, true);
     //getchar();
