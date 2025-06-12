@@ -37,6 +37,7 @@ extern "C"
 {
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
+#include <libavutil/mem.h>
 #include <libavutil/pixdesc.h>
 #include <libavutil/hwcontext.h>
 #include <libavutil/opt.h>
@@ -45,16 +46,16 @@ extern "C"
 #include <libswscale/swscale.h>
 }
 
-static AVBufferRef       *hw_device_ctx = NULL;
+static AVBufferRef *hw_device_ctx = NULL;
 static enum AVPixelFormat hw_pix_fmt;
-static FILE              *output_file = NULL;
+static FILE *output_file = NULL;
 
 static int hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType type)
 {
     int err = 0;
 
-    if ((err = av_hwdevice_ctx_create(&hw_device_ctx, type, NULL, NULL, 0)) < 0)
-    {
+    if ((err = av_hwdevice_ctx_create(&hw_device_ctx, type,
+                                      NULL, NULL, 0)) < 0) {
         fprintf(stderr, "Failed to create specified HW device.\n");
         return err;
     }
@@ -63,12 +64,12 @@ static int hw_decoder_init(AVCodecContext *ctx, const enum AVHWDeviceType type)
     return err;
 }
 
-static enum AVPixelFormat get_hw_format(AVCodecContext *ctx, const enum AVPixelFormat *pix_fmts)
+static enum AVPixelFormat get_hw_format(AVCodecContext *ctx,
+                                        const enum AVPixelFormat *pix_fmts)
 {
     const enum AVPixelFormat *p;
 
-    for (p = pix_fmts; *p != -1; p++)
-    {
+    for (p = pix_fmts; *p != -1; p++) {
         if (*p == hw_pix_fmt)
             return *p;
     }
@@ -78,68 +79,65 @@ static enum AVPixelFormat get_hw_format(AVCodecContext *ctx, const enum AVPixelF
 }
 
 static SwsContext *sws_ctx = nullptr;
-static int         frameIndex = 0;
+static int frameIndex = 0;
 static int decode_write(AVCodecContext *avctx, AVPacket *packet)
 {
-    if (!sws_ctx)
-    {
-        sws_ctx = sws_getCachedContext(
-            NULL, avctx->width, avctx->height, AV_PIX_FMT_NV12, avctx->width, avctx->height, AV_PIX_FMT_BGR24, SWS_BILINEAR, NULL, NULL, NULL
-        );
-    }
-
-    // 创建RGB视频帧
-    AVFrame *frameRGB = av_frame_alloc();
-    int      numBytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, avctx->width, avctx->height, AV_INPUT_BUFFER_PADDING_SIZE);
-    uint8_t *bufferRGB  = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t)); //注意，这里给frameRGB申请的buffer，需要单独释放
-    av_image_fill_arrays(frameRGB->data, frameRGB->linesize, bufferRGB, AV_PIX_FMT_BGR24, avctx->width, avctx->height, AV_INPUT_BUFFER_PADDING_SIZE);
-
     AVFrame *frame = NULL, *sw_frame = NULL;
     AVFrame *tmp_frame = NULL;
-    uint8_t *buffer    = NULL;
-    int      size;
-    int      ret = 0;
+    uint8_t *buffer = NULL;
+    int size;
+    int ret = 0;
 
     ret = avcodec_send_packet(avctx, packet);
-    if (ret < 0)
-    {
+    if (ret < 0) {
         fprintf(stderr, "Error during decoding\n");
         return ret;
     }
 
-    while (1)
-    {
-        if (!(frame = av_frame_alloc()) || !(sw_frame = av_frame_alloc()))
-        {
+    while (1) {
+        if (!(frame = av_frame_alloc()) || !(sw_frame = av_frame_alloc())) {
             fprintf(stderr, "Can not alloc frame\n");
             ret = AVERROR(ENOMEM);
             goto fail;
         }
 
         ret = avcodec_receive_frame(avctx, frame);
-        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF)
-        {
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
             av_frame_free(&frame);
             av_frame_free(&sw_frame);
             return 0;
-        }
-        else if (ret < 0)
-        {
+        } else if (ret < 0) {
             fprintf(stderr, "Error while decoding\n");
             goto fail;
         }
 
-        if (frame->format == hw_pix_fmt)
-        {
+        if (frame->format == hw_pix_fmt) {
             /* retrieve data from GPU to CPU */
-            if ((ret = av_hwframe_transfer_data(sw_frame, frame, 0)) < 0)
-            {
+            if ((ret = av_hwframe_transfer_data(sw_frame, frame, 0)) < 0) {
                 fprintf(stderr, "Error transferring the data to system memory\n");
                 goto fail;
             }
             tmp_frame = sw_frame;
             frameIndex++;
-            int ret   = sws_scale(sws_ctx, sw_frame->data, sw_frame->linesize, 0, avctx->height, frameRGB->data, frameRGB->linesize);
+            //{//直接使用opencv将NV12转RGB可以成功，但是图片显示不太正常
+            //    cv::Mat yuv_mat(tmp_frame->height * 3 / 2, tmp_frame->width, CV_8UC1, (void*)tmp_frame->data[0], tmp_frame->linesize[0]);
+            //    // 转换为RGB
+            //    cv::Mat rgb_mat;
+            //    cv::cvtColor(yuv_mat, rgb_mat, cv::COLOR_YUV2BGR_NV12);
+            //    char filename[100];
+            //    sprintf(filename, "%d.jpg", frameIndex);
+            //    cv::imwrite(filename, rgb_mat);
+            //}
+
+            if (!sws_ctx) {
+                sws_ctx = sws_getContext(avctx->width, avctx->height, AV_PIX_FMT_NV12, avctx->width, avctx->height, AV_PIX_FMT_BGR24, SWS_BILINEAR, NULL, NULL, NULL);
+            }
+            // 创建RGB视频帧
+            AVFrame* frameRGB = av_frame_alloc();
+            int numBytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, avctx->width, avctx->height, AV_INPUT_BUFFER_PADDING_SIZE);
+            uint8_t* bufferRGB = (uint8_t*)av_malloc(numBytes * sizeof(uint8_t)); // 注意，这里给frameRGB申请的buffer，需要单独释放
+            av_image_fill_arrays(frameRGB->data, frameRGB->linesize, bufferRGB, AV_PIX_FMT_BGR24, avctx->width, avctx->height, AV_INPUT_BUFFER_PADDING_SIZE);
+            int ret = sws_scale(sws_ctx, sw_frame->data, sw_frame->linesize, 0, avctx->height, frameRGB->data, frameRGB->linesize);
             if (ret)
             {
                 // 保存图片
@@ -148,40 +146,37 @@ static int decode_write(AVCodecContext *avctx, AVPacket *packet)
                 cv::Mat mat = cv::Mat(avctx->height, avctx->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
                 cv::imwrite(filename, mat);
             }
-        }
-        else
+            av_frame_free(&frameRGB);
+            av_freep(&bufferRGB);
+        } else
             tmp_frame = frame;
 
-        size   = av_image_get_buffer_size((AVPixelFormat) tmp_frame->format, tmp_frame->width, tmp_frame->height, 1);
-        buffer = (uint8_t *) av_malloc(size);
-        if (!buffer)
-        {
+        size = av_image_get_buffer_size((AVPixelFormat)tmp_frame->format, tmp_frame->width,
+                                        tmp_frame->height, 1);
+        buffer = (uint8_t*)av_malloc(size);
+        if (!buffer) {
             fprintf(stderr, "Can not alloc buffer\n");
             ret = AVERROR(ENOMEM);
             goto fail;
         }
-        ret = av_image_copy_to_buffer(
-            buffer, size, (const uint8_t *const *) tmp_frame->data, (const int *) tmp_frame->linesize, (AVPixelFormat) tmp_frame->format,
-            tmp_frame->width, tmp_frame->height, 1
-        );
-        if (ret < 0)
-        {
+        ret = av_image_copy_to_buffer(buffer, size,
+                                      (const uint8_t * const *)tmp_frame->data,
+                                      (const int*)tmp_frame->linesize, (AVPixelFormat)tmp_frame->format,
+                                      tmp_frame->width, tmp_frame->height, 1);
+        if (ret < 0) {
             fprintf(stderr, "Can not copy image to buffer\n");
             goto fail;
         }
 
-        if ((ret = fwrite(buffer, 1, size, output_file)) < 0)
-        {
+        if ((ret = fwrite(buffer, 1, size, output_file)) < 0) {
             fprintf(stderr, "Failed to dump raw data.\n");
             goto fail;
         }
 
-fail:
+    fail:
         av_frame_free(&frame);
         av_frame_free(&sw_frame);
         av_freep(&buffer);
-        av_frame_free(&frameRGB);
-        av_freep(&bufferRGB);
         if (ret < 0)
             return ret;
     }
@@ -189,75 +184,68 @@ fail:
 
 int main_hw_decode(int argc, char *argv[])
 {
-    AVFormatContext    *input_ctx = NULL;
-    int                 video_stream, ret;
-    AVStream           *video       = NULL;
-    AVCodecContext     *decoder_ctx = NULL;
-    const AVCodec      *decoder     = NULL;
-    AVPacket           *packet      = NULL;
+    AVFormatContext *input_ctx = NULL;
+    int video_stream, ret;
+    AVStream *video = NULL;
+    AVCodecContext *decoder_ctx = NULL;
+    const AVCodec *decoder = NULL;
+    AVPacket *packet = NULL;
     enum AVHWDeviceType type;
-    int                 i;
+    int i;
 
-    //if (argc < 4)
-    //{
+    //if (argc < 4) {
     //    fprintf(stderr, "Usage: %s <device type> <input file> <output file>\n", argv[0]);
     //    return -1;
     //}
 
-    std::string url = "E:\\code\\media\\BaiduSyncdisk.mp4";
-    std::string hwdevice_name = "dxva2";
-    std::string filepath   = "E:\\code\\media\\output.mp4";
+    argv[1] = const_cast<char *>("dxva2");
+    argv[2] = const_cast<char *>("E:\\code\\media\\BaiduSyncdisk.mp4");
+    argv[3] = const_cast<char *>("E:\\code\\media\\output.mp4");
 
-    type = av_hwdevice_find_type_by_name(hwdevice_name.c_str());
-    if (type == AV_HWDEVICE_TYPE_NONE)
-    {
-        fprintf(stderr, "Device type %s is not supported.\n", hwdevice_name.c_str());
+    type = av_hwdevice_find_type_by_name(argv[1]);
+    if (type == AV_HWDEVICE_TYPE_NONE) {
+        fprintf(stderr, "Device type %s is not supported.\n", argv[1]);
         fprintf(stderr, "Available device types:");
-        while ((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE)
+        while((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE)
             fprintf(stderr, " %s", av_hwdevice_get_type_name(type));
         fprintf(stderr, "\n");
         return -1;
     }
 
     packet = av_packet_alloc();
-    if (!packet)
-    {
+    if (!packet) {
         fprintf(stderr, "Failed to allocate AVPacket\n");
         return -1;
     }
 
     /* open the input file */
-    if (avformat_open_input(&input_ctx, url.c_str(), NULL, NULL) != 0)
-    {
-        fprintf(stderr, "Cannot open input file '%s'\n", url.c_str());
+    if (avformat_open_input(&input_ctx, argv[2], NULL, NULL) != 0) {
+        fprintf(stderr, "Cannot open input file '%s'\n", argv[2]);
         return -1;
     }
 
-    if (avformat_find_stream_info(input_ctx, NULL) < 0)
-    {
+    if (avformat_find_stream_info(input_ctx, NULL) < 0) {
         fprintf(stderr, "Cannot find input stream information.\n");
         return -1;
     }
 
     /* find the video stream information */
     ret = av_find_best_stream(input_ctx, AVMEDIA_TYPE_VIDEO, -1, -1, &decoder, 0);
-    if (ret < 0)
-    {
+    if (ret < 0) {
         fprintf(stderr, "Cannot find a video stream in the input file\n");
         return -1;
     }
     video_stream = ret;
 
-    for (i = 0;; i++)
-    {
+    for (i = 0;; i++) {
         const AVCodecHWConfig *config = avcodec_get_hw_config(decoder, i);
-        if (!config)
-        {
-            fprintf(stderr, "Decoder %s does not support device type %s.\n", decoder->name, av_hwdevice_get_type_name(type));
+        if (!config) {
+            fprintf(stderr, "Decoder %s does not support device type %s.\n",
+                    decoder->name, av_hwdevice_get_type_name(type));
             return -1;
         }
-        if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX && config->device_type == type)
-        {
+        if (config->methods & AV_CODEC_HW_CONFIG_METHOD_HW_DEVICE_CTX &&
+            config->device_type == type) {
             hw_pix_fmt = config->pix_fmt;
             break;
         }
@@ -270,23 +258,21 @@ int main_hw_decode(int argc, char *argv[])
     if (avcodec_parameters_to_context(decoder_ctx, video->codecpar) < 0)
         return -1;
 
-    decoder_ctx->get_format = get_hw_format;
+    decoder_ctx->get_format  = get_hw_format;
 
     if (hw_decoder_init(decoder_ctx, type) < 0)
         return -1;
 
-    if ((ret = avcodec_open2(decoder_ctx, decoder, NULL)) < 0)
-    {
+    if ((ret = avcodec_open2(decoder_ctx, decoder, NULL)) < 0) {
         fprintf(stderr, "Failed to open codec for stream #%u\n", video_stream);
         return -1;
     }
 
     /* open the file to dump raw data */
-    output_file = fopen(filepath.c_str(), "w+b");
+    output_file = fopen(argv[3], "w+b");
 
     /* actual decoding and dump the raw data */
-    while (ret >= 0)
-    {
+    while (ret >= 0) {
         if ((ret = av_read_frame(input_ctx, packet)) < 0)
             break;
 
