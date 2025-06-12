@@ -16,9 +16,9 @@ extern "C"
 static uint8_t* g_buffer = nullptr;
 
 // 函数：将视频转换为图片序列 ，只对mp4做了测试，其他格式未测试。
-bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
+bool VideoToImages(const std::string& filePath, const std::string& outputFolder, int threadIndex, bool useRgba, int threadCount)
 {
-    LOG_INFO << "start decode audio:" << filePath << std::endl;
+    LOG_INFO << "start decode:" << filePath << std::endl;
     avformat_network_init();
 
     // 打开视频文件
@@ -104,12 +104,12 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
     int       gopSize     = codecContext->gop_size;
 
     LOG_INFO << "fps=" << (int) fps << ", frameCount=" << frameCount << std::endl;
-
+#ifdef USE_SCALE
     //SwsContext* sws_ctx = sws_getContext(
     //    codecContext->width, codecContext->height, codecContext->pix_fmt, codecContext->width, codecContext->height, AV_PIX_FMT_BGR24, SWS_BILINEAR,
     //    NULL, NULL, NULL
     //);
-    ////使用sws_getContext会出现内存泄漏，使用sws_getCachedContext代替
+    //使用sws_getContext会出现内存泄漏，使用sws_getCachedContext代替
     SwsContext* sws_ctx = sws_getCachedContext(
         NULL, codecContext->width, codecContext->height, codecContext->pix_fmt, codecContext->width, codecContext->height, AV_PIX_FMT_BGR24,
         SWS_BILINEAR, NULL, NULL, NULL
@@ -122,6 +122,14 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
         avformat_network_deinit();
         return false;
     }
+    int  inLinesize[3]  = {codecContext->width, codecContext->width / 2, codecContext->width / 2};
+    auto bufSize        = codecContext->width * codecContext->height * 4;
+    // auto  buf            = std::make_unique<std::uint8_t[]>(codecContext->width * codecContext->height * 4); // rgba
+    // auto* rgb            = buf.get();
+    auto rgb            = new uint8_t[bufSize];
+    int  outLinesize[1] = {codecContext->width * 4};
+
+#endif
     // 创建RGB视频帧
     AVFrame* frameRGB = av_frame_alloc();
     int      numBytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, codecContext->width, codecContext->height, AV_INPUT_BUFFER_PADDING_SIZE);
@@ -143,7 +151,12 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
         if (packet->stream_index == videoStreamIndex)
         {
             packetIndex++;
-            LOG_INFO << "packetIndex:" << packetIndex << ", packetFlags:" << packet->flags << std::endl;
+            {
+                auto duration = std::chrono::system_clock::now().time_since_epoch();
+                auto ts       = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+                LOG_INFO << "threadIndex:" << threadIndex << ", packetIndex:" << packetIndex << ", packetFlags:" << packet->flags << ", ts:" << ts
+                         << std::endl;
+            }
             //if (packet.flags != AV_PKT_FLAG_KEY)
             //{
             //    continue;
@@ -158,35 +171,41 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
             while (avcodec_receive_frame(codecContext, frame) >= 0)
             {
                 frameIndex++;
-                LOG_INFO << "frameIndex:" << frameIndex << ", keyFrame:" << frame->key_frame << std::endl;
-                //if (frameIndex % 5 != 0)
-                //{
-                //    av_frame_unref(frame);
-                //    continue;
-                //}
+                {
+                    auto duration = std::chrono::system_clock::now().time_since_epoch();
+                    auto ts       = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+                    LOG_INFO << "threadIndex:" << threadIndex << ", packetIndex:" << packetIndex << ", frameIndex:" << frameIndex
+                             << ", keyFrame:" << frame->key_frame << ", ts:" << ts << std::endl;
+                }
+                // std::this_thread::sleep_for(std::chrono::milliseconds(25));
+                if (useRgba)
+                {
+#ifdef USE_SCALE
 
-                //int ret = libyuv::I420ToRGBA(
-                //    frame->data[0], frame->linesize[0], frame->data[1], frame->linesize[1], frame->data[2], frame->linesize[2], frameRGB->data[0],
-                //    frameRGB->linesize[0], codecContext->width, codecContext->height
-                //);
-                //delete[] g_buffer;
-                //g_buffer                            = nullptr;
-                //g_buffer                            = new uint8_t[frame->width * frame->width];
-                //const uint8_t* const inData[3]      = {frame->data[0], frame->data[1], frame->data[2]};
-                //int                  inLinesize[3]  = {frame->width, frame->width / 2, frame->width / 2};
-                //auto                 buf            = std::make_unique<std::uint8_t[]>(frame->width * frame->height * 4); // rgba
-                //int                  outLinesize[1] = {frame->width * 4};
-                //auto*                rgb            = buf.get();
-                //int                  ret            = sws_scale(sws_ctx, inData, inLinesize, 0, frame->height, &rgb, outLinesize);
+                    memset(rgb, 0, bufSize);
+                    const uint8_t* const inData[3] = {frame->data[0], frame->data[1], frame->data[2]};
+                    // int                  inLinesize[3] = {frame->width, frame->width / 2, frame->width / 2};
 
-                int ret = sws_scale(sws_ctx, frame->data, frame->linesize, 0, codecContext->height, frameRGB->data, frameRGB->linesize);
-
-                // 保存图片
-                char filename[100];
-                sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frameIndex);
-                cv::Mat mat = cv::Mat(codecContext->height, codecContext->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
-                cv::imwrite(filename, mat);
-
+                    // auto  buf            = std::make_unique<std::uint8_t[]>(frame->width * frame->height * 4); // rgba
+                    // int   outLinesize[1] = {frame->width * 4};
+                    // auto* rgb            = buf.get();
+                    int ret = sws_scale(sws_ctx, inData, inLinesize, 0, frame->height, &rgb, outLinesize);
+                    // int ret = sws_scale(sws_ctx, frame->data, frame->linesize, 0, codecContext->height, frameRGB->data, frameRGB->linesize);
+                    std::cout << "sws_scale ret=" << ret << std::endl;
+#endif
+                    //// 保存图片
+                    //char filename[100];
+                    //sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frameIndex);
+                    //cv::Mat mat = cv::Mat(codecContext->height, codecContext->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
+                    //cv::imwrite(filename, mat);
+                    {
+                        auto duration = std::chrono::system_clock::now().time_since_epoch();
+                        auto ts       = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+                        LOG_INFO << "threadIndex:" << threadIndex << ", packetIndex:" << packetIndex << ", frameIndex:" << frameIndex
+                                 << ", convert rgba"
+                                 << ", ts:" << ts << std::endl;
+                    }
+                }
                 av_frame_unref(frame);
             }
             av_frame_unref(frame);
@@ -198,11 +217,14 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
     av_frame_free(&frame);
     av_frame_free(&frameRGB);
     av_freep(&buffer); //释放av_malloc申请的buffer，需要单独释放
-
+#ifdef USE_SCALE
     sws_freeContext(sws_ctx);
+#endif
     avcodec_free_context(&codecContext);
     avformat_close_input(&formatContext);
     avformat_network_deinit();
+
+    LOG_INFO << "end decode:" << filePath << std::endl;
     return true;
 }
 
