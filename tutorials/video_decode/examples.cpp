@@ -15,8 +15,13 @@ extern "C"
 
 static uint8_t* g_buffer = nullptr;
 
+bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
+{
+    return VideoToImages2(filePath, outputFolder, 1, true, 2);
+}
+
 // 函数：将视频转换为图片序列 ，只对mp4做了测试，其他格式未测试。
-bool VideoToImages(const std::string& filePath, const std::string& outputFolder, int threadIndex, bool useRgba, int threadCount)
+bool VideoToImages2(const std::string& filePath, const std::string& outputFolder, int threadIndex, bool useRgba, int threadCount)
 {
     LOG_INFO << "start decode:" << filePath << std::endl;
     avformat_network_init();
