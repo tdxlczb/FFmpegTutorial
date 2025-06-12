@@ -32,7 +32,7 @@
  */
 
 #include <stdio.h>
-
+#include <opencv2/opencv.hpp>
 extern "C"
 {
 #include <libavcodec/avcodec.h>
@@ -42,6 +42,7 @@ extern "C"
 #include <libavutil/opt.h>
 #include <libavutil/avassert.h>
 #include <libavutil/imgutils.h>
+#include <libswscale/swscale.h>
 }
 
 static AVBufferRef       *hw_device_ctx = NULL;
@@ -76,8 +77,23 @@ static enum AVPixelFormat get_hw_format(AVCodecContext *ctx, const enum AVPixelF
     return AV_PIX_FMT_NONE;
 }
 
+static SwsContext *sws_ctx = nullptr;
+static int         frameIndex = 0;
 static int decode_write(AVCodecContext *avctx, AVPacket *packet)
 {
+    if (!sws_ctx)
+    {
+        sws_ctx = sws_getCachedContext(
+            NULL, avctx->width, avctx->height, AV_PIX_FMT_NV12, avctx->width, avctx->height, AV_PIX_FMT_BGR24, SWS_BILINEAR, NULL, NULL, NULL
+        );
+    }
+
+    // 创建RGB视频帧
+    AVFrame *frameRGB = av_frame_alloc();
+    int      numBytes = av_image_get_buffer_size(AV_PIX_FMT_BGR24, avctx->width, avctx->height, AV_INPUT_BUFFER_PADDING_SIZE);
+    uint8_t *bufferRGB  = (uint8_t *) av_malloc(numBytes * sizeof(uint8_t)); //注意，这里给frameRGB申请的buffer，需要单独释放
+    av_image_fill_arrays(frameRGB->data, frameRGB->linesize, bufferRGB, AV_PIX_FMT_BGR24, avctx->width, avctx->height, AV_INPUT_BUFFER_PADDING_SIZE);
+
     AVFrame *frame = NULL, *sw_frame = NULL;
     AVFrame *tmp_frame = NULL;
     uint8_t *buffer    = NULL;
@@ -122,6 +138,16 @@ static int decode_write(AVCodecContext *avctx, AVPacket *packet)
                 goto fail;
             }
             tmp_frame = sw_frame;
+            frameIndex++;
+            int ret   = sws_scale(sws_ctx, sw_frame->data, sw_frame->linesize, 0, avctx->height, frameRGB->data, frameRGB->linesize);
+            if (ret)
+            {
+                // 保存图片
+                char filename[100];
+                sprintf(filename, "%d.jpg", frameIndex);
+                cv::Mat mat = cv::Mat(avctx->height, avctx->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
+                cv::imwrite(filename, mat);
+            }
         }
         else
             tmp_frame = frame;
@@ -154,6 +180,8 @@ fail:
         av_frame_free(&frame);
         av_frame_free(&sw_frame);
         av_freep(&buffer);
+        av_frame_free(&frameRGB);
+        av_freep(&bufferRGB);
         if (ret < 0)
             return ret;
     }
@@ -170,16 +198,20 @@ int main_hw_decode(int argc, char *argv[])
     enum AVHWDeviceType type;
     int                 i;
 
-    if (argc < 4)
-    {
-        fprintf(stderr, "Usage: %s <device type> <input file> <output file>\n", argv[0]);
-        return -1;
-    }
+    //if (argc < 4)
+    //{
+    //    fprintf(stderr, "Usage: %s <device type> <input file> <output file>\n", argv[0]);
+    //    return -1;
+    //}
 
-    type = av_hwdevice_find_type_by_name(argv[1]);
+    std::string url = "E:\\code\\media\\BaiduSyncdisk.mp4";
+    std::string hwdevice_name = "dxva2";
+    std::string filepath   = "E:\\code\\media\\output.mp4";
+
+    type = av_hwdevice_find_type_by_name(hwdevice_name.c_str());
     if (type == AV_HWDEVICE_TYPE_NONE)
     {
-        fprintf(stderr, "Device type %s is not supported.\n", argv[1]);
+        fprintf(stderr, "Device type %s is not supported.\n", hwdevice_name.c_str());
         fprintf(stderr, "Available device types:");
         while ((type = av_hwdevice_iterate_types(type)) != AV_HWDEVICE_TYPE_NONE)
             fprintf(stderr, " %s", av_hwdevice_get_type_name(type));
@@ -195,9 +227,9 @@ int main_hw_decode(int argc, char *argv[])
     }
 
     /* open the input file */
-    if (avformat_open_input(&input_ctx, argv[2], NULL, NULL) != 0)
+    if (avformat_open_input(&input_ctx, url.c_str(), NULL, NULL) != 0)
     {
-        fprintf(stderr, "Cannot open input file '%s'\n", argv[2]);
+        fprintf(stderr, "Cannot open input file '%s'\n", url.c_str());
         return -1;
     }
 
@@ -250,7 +282,7 @@ int main_hw_decode(int argc, char *argv[])
     }
 
     /* open the file to dump raw data */
-    output_file = fopen(argv[3], "w+b");
+    output_file = fopen(filepath.c_str(), "w+b");
 
     /* actual decoding and dump the raw data */
     while (ret >= 0)
