@@ -10,7 +10,6 @@ extern "C"
 #include <libavutil/frame.h>
 #include <libswscale/swscale.h>
 }
-
 //#include "E:\code\demo\FFmpegTutorial\public\third_party\libyuv\include\libyuv.h"
 //#pragma comment(lib, "E:/code/demo/FFmpegTutorial/public/third_party/libyuv/lib/yuv.lib")
 
