@@ -9,13 +9,15 @@
 extern "C"
 {
 #include <libavformat/avformat.h>
+#include <libavcodec/avcodec.h>
+#include <libavutil/error.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/frame.h>
-#include <libavcodec/avcodec.h>
+#include <libavutil/time.h>
 #include <libswscale/swscale.h>
+#include <libswresample/swresample.h>
 }
 
 bool VideoToImages(const std::string& filePath, const std::string& outputFolder);
-bool VideoToImages2(const std::string& filePath, const std::string& outputFolder, int threadIndex, bool useRgba, int threadCount);
 
 bool H265TranscodeH264(const std::string& inputPath, const std::string& outputPath);
