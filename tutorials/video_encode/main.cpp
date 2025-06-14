@@ -16,8 +16,8 @@ int main()
     std::string output    = R"(E:\code\media\temp)";
     std::string filePath  = R"(E:\code\media\BaiduSyncdisk.mp4)";
     std::string filePath2 = R"(E:\code\media\temp\dump.h264)";
-
-    VideoTranscode(filePath, filePath2, "libx265");
+    FindEncoders();
+    //VideoTranscode(filePath, filePath2, "libx265");
 
     getchar();
     return 0;

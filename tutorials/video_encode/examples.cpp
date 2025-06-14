@@ -1,5 +1,6 @@
 ﻿#include "examples.h"
 #include <iostream>
+#include <iomanip>
 #include <fstream>
 #include <logger/logger.h>
 
@@ -102,8 +103,8 @@ bool VideoTranscode(const std::string& inputPath, const std::string& outputPath,
     }
 
     // 创建编码器上下文
-    const AVCodec*  encoder        = avcodec_find_encoder_by_name(codecName.c_str());
-    //const AVCodec*  encoder        = avcodec_find_encoder(AV_CODEC_ID_HEVC);
+    //const AVCodec*  encoder        = avcodec_find_encoder_by_name(codecName.c_str());
+    const AVCodec*  encoder        = avcodec_find_encoder(AV_CODEC_ID_HEVC);
     AVCodecContext* encoderContext = avcodec_alloc_context3(encoder);
     encoderContext->width          = decoderContext->width;
     encoderContext->height         = decoderContext->height;
@@ -235,4 +236,90 @@ bool VideoTranscode(const std::string& inputPath, const std::string& outputPath,
     avformat_close_input(&formatContext);
     avformat_network_deinit();
     return true;
+}
+
+void FindEncoders()
+{
+    std::cout << "Available encoders:\n";
+    std::cout << "========================================\n";
+
+    const AVCodec* codec = nullptr;
+    void* iter = nullptr;
+
+    // 遍历所有编解码器
+    while ((codec = av_codec_iterate(&iter))) {
+        if (!av_codec_is_encoder(codec)) {
+            continue;  // 只关注编码器
+        }
+
+        //// 格式化打印
+        //// 输出宽度10个字符，左对齐，不足补空格，输出3
+        //std::cout << std::setw(10) << std::setfill(' ') << std::left << 2 << std::endl;
+        //// 输出宽度14，右对齐，不足补0，输出10
+        //std::cout << std::setw(14) << std::setfill('0') << std::right << 10 << std::endl;
+
+        std::cout << "Name: " << codec->name << "\n";
+        std::cout << "Long Name: " << codec->long_name << "\n";
+        std::cout << "Type: ";
+
+        switch (codec->type) {
+        case AVMEDIA_TYPE_VIDEO:
+            std::cout << "Video";
+            break;
+        case AVMEDIA_TYPE_AUDIO:
+            std::cout << "Audio";
+            break;
+        case AVMEDIA_TYPE_SUBTITLE:
+            std::cout << "Subtitle";
+            break;
+        default:
+            std::cout << "Other";
+        }
+
+        std::cout << "\n";
+        std::cout << "ID: " << codec->id << "\n";
+
+        // 检查支持的像素格式（视频编码器）
+        if (codec->type == AVMEDIA_TYPE_VIDEO && codec->pix_fmts) {
+            std::cout << "Supported pixel formats: ";
+            for (const enum AVPixelFormat* p = codec->pix_fmts; *p != AV_PIX_FMT_NONE; p++) {
+                std::cout << av_get_pix_fmt_name(*p) << " ";
+            }
+            std::cout << "\n";
+        }
+
+        // 检查支持的采样格式（音频编码器）
+        if (codec->type == AVMEDIA_TYPE_AUDIO && codec->sample_fmts) {
+            std::cout << "Supported sample formats: ";
+            for (const enum AVSampleFormat* p = codec->sample_fmts; *p != AV_SAMPLE_FMT_NONE; p++) {
+                std::cout << av_get_sample_fmt_name(*p) << " ";
+            }
+            std::cout << "\n";
+        }
+
+        // 检查支持的采样率（音频编码器）
+        if (codec->type == AVMEDIA_TYPE_AUDIO && codec->supported_samplerates) {
+            std::cout << "Supported sample rates: ";
+            for (const int* p = codec->supported_samplerates; *p != 0; p++) {
+                std::cout << *p << "Hz ";
+            }
+            std::cout << "\n";
+        }
+
+        //// 检查支持的声道布局（音频编码器）
+        //if (codec->type == AVMEDIA_TYPE_AUDIO && codec->channel_layouts) {
+        //    std::cout << "Supported channel layouts: ";
+        //    for (const uint64_t* p = codec->channel_layouts; *p != 0; p++) {
+        //        char buf[256];
+        //        av_get_channel_layout_string(buf, sizeof(buf), -1, *p);
+        //        std::cout << buf << " ";
+        //    }
+        //    std::cout << "\n";
+        //}
+
+        std::cout << "----------------------------------------\n";
+    }
+
+    std::cout << "========================================\n";
+    std::cout << "Available encoders end\n";
 }

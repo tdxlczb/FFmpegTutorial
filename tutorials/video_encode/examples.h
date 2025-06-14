@@ -19,3 +19,5 @@ extern "C"
 }
 
 bool VideoTranscode(const std::string& inputPath, const std::string& outputPath, const std::string& codecName);
+
+void FindEncoders();
