@@ -18,4 +18,4 @@ extern "C"
 #include <libswresample/swresample.h>
 }
 
-bool VideoToImages(const std::string& filePath, const std::string& outputFolder);
+bool VideoTranscode(const std::string& inputPath, const std::string& outputPath, const std::string& codecName);

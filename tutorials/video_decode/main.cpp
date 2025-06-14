@@ -61,13 +61,10 @@ int main()
 {
     InitLogger();
     LOG_INFO << "==================================";
-    std::string output    = "E:\\res\\mca\\output";
-    std::string filePath  = "E:\\res\\mca\\test.h265";
-    std::string filePath2 = "E:\\res\\mca\\dump.264";
+    std::string output    = R"(E:\code\media\temp)";
+    std::string filePath  = R"(E:\code\media\BaiduSyncdisk.mp4)";
+    std::string filePath2 = R"(E:\code\media\temp\dump.h264)";
     VideoToImages(filePath, output);
-    getchar();
-    H265TranscodeH264(filePath, filePath2);
-
     //multi_thread_test();
     //video_to_image();
 
