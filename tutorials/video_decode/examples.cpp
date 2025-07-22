@@ -12,7 +12,7 @@ std::string av_error_string(int errnum) {
 }
 
 static AVBufferRef* hw_device_ctx = NULL;
-static enum AVPixelFormat hw_pix_fmt;
+static enum AVPixelFormat hw_pix_fmt = AV_PIX_FMT_NONE;
 
 static enum AVPixelFormat get_hw_format(AVCodecContext* ctx, const enum AVPixelFormat* pix_fmts)
 {

@@ -14,7 +14,7 @@ std::string av_error_string(int errnum) {
 
 bool VideoTranscode(const std::string& inputPath, const std::string& outputPath, const std::string& codecName)
 {
-    LOG_INFO << "input path：" << inputPath << std::endl;
+    LOG_INFO << "start transcode：" << inputPath << std::endl;
     avformat_network_init();
 
     // 打开视频文件
@@ -103,8 +103,8 @@ bool VideoTranscode(const std::string& inputPath, const std::string& outputPath,
     }
 
     // 创建编码器上下文
-    //const AVCodec*  encoder        = avcodec_find_encoder_by_name(codecName.c_str());
-    const AVCodec*  encoder        = avcodec_find_encoder(AV_CODEC_ID_HEVC);
+    const AVCodec*  encoder        = avcodec_find_encoder_by_name(codecName.c_str());
+    //const AVCodec*  encoder        = avcodec_find_encoder(AV_CODEC_ID_HEVC);
     AVCodecContext* encoderContext = avcodec_alloc_context3(encoder);
     encoderContext->width          = decoderContext->width;
     encoderContext->height         = decoderContext->height;
@@ -235,7 +235,176 @@ bool VideoTranscode(const std::string& inputPath, const std::string& outputPath,
     avcodec_free_context(&encoderContext);
     avformat_close_input(&formatContext);
     avformat_network_deinit();
+    LOG_INFO << "end transcode：" << inputPath << std::endl;
     return true;
+}
+
+int VideoTranscode2(const std::string& inputPath, const std::string& outputPath, const std::string& codecName)
+{
+    // 2. 打开输入文件
+    AVFormatContext* input_ctx = nullptr;
+    if (avformat_open_input(&input_ctx, inputPath.c_str(), nullptr, nullptr) < 0) {
+        std::cerr << "Could not open input file\n";
+        return -1;
+    }
+
+    if (avformat_find_stream_info(input_ctx, nullptr) < 0) {
+        std::cerr << "Could not find stream info\n";
+        return -1;
+    }
+
+    // 3. 查找视频流
+    int video_stream_idx = -1;
+    AVCodecParameters* codec_params = nullptr;
+    for (unsigned int i = 0; i < input_ctx->nb_streams; i++) {
+        if (input_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            video_stream_idx = i;
+            codec_params = input_ctx->streams[i]->codecpar;
+            break;
+        }
+    }
+
+    if (video_stream_idx == -1) {
+        std::cerr << "No video stream found\n";
+        return -1;
+    }
+
+    // 4. 初始化 H.265 解码器
+    const AVCodec* decoder = avcodec_find_decoder(codec_params->codec_id);
+    if (!decoder) {
+        std::cerr << "Unsupported codec\n";
+        return -1;
+    }
+
+    AVCodecContext* decoder_ctx = avcodec_alloc_context3(decoder);
+    if (avcodec_parameters_to_context(decoder_ctx, codec_params) < 0) {
+        std::cerr << "Failed to copy codec params\n";
+        return -1;
+    }
+
+    if (avcodec_open2(decoder_ctx, decoder, nullptr) < 0) {
+        std::cerr << "Failed to open decoder\n";
+        return -1;
+    }
+
+    // 5. 初始化 H.264 编码器
+    const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
+    if (!encoder) {
+        std::cerr << "H.264 encoder not found\n";
+        return -1;
+    }
+
+    AVCodecContext* encoder_ctx = avcodec_alloc_context3(encoder);
+    encoder_ctx->width = decoder_ctx->width;
+    encoder_ctx->height = decoder_ctx->height;
+    encoder_ctx->pix_fmt = decoder_ctx->pix_fmt;
+    encoder_ctx->time_base = { 1, 25 }; // 25 FPS (adjust as needed)
+    encoder_ctx->bit_rate = 4000000;  // 4 Mbps (adjust as needed)
+    encoder_ctx->gop_size = 10;       // Keyframe interval
+
+    // 启用 CRF 质量模式
+    //encoder_ctx->bit_rate = 0;
+    //encoder_ctx->flags |= AV_CODEC_FLAG_QSCALE;
+    //encoder_ctx->global_quality = 23 * FF_QP2LAMBDA; // CRF=23
+    //encoder_ctx->gop_size = 30;
+    //encoder_ctx->max_b_frames = 2;
+
+
+    if (avcodec_open2(encoder_ctx, encoder, nullptr) < 0) {
+        std::cerr << "Failed to open encoder\n";
+        return -1;
+    }
+
+    // 6. 准备输出文件
+    AVFormatContext* output_ctx = nullptr;
+    if (avformat_alloc_output_context2(&output_ctx, nullptr, nullptr, outputPath.c_str()) < 0) {
+        std::cerr << "Failed to create output context\n";
+        return -1;
+    }
+
+    AVStream* output_stream = avformat_new_stream(output_ctx, encoder);
+    if (!output_stream) {
+        std::cerr << "Failed to create output stream\n";
+        return -1;
+    }
+
+    if (avcodec_parameters_from_context(output_stream->codecpar, encoder_ctx) < 0) {
+        std::cerr << "Failed to copy encoder params\n";
+        return -1;
+    }
+
+    if (!(output_ctx->oformat->flags & AVFMT_NOFILE)) {
+        if (avio_open(&output_ctx->pb, outputPath.c_str(), AVIO_FLAG_WRITE) < 0) {
+            std::cerr << "Failed to open output file\n";
+            return -1;
+        }
+    }
+
+    if (avformat_write_header(output_ctx, nullptr) < 0) {
+        std::cerr << "Failed to write header\n";
+        return -1;
+    }
+
+    // 7. 解码→编码循环
+    AVPacket* input_packet = av_packet_alloc();
+    AVFrame* decoded_frame = av_frame_alloc();
+    AVPacket* output_packet = av_packet_alloc();
+
+    while (av_read_frame(input_ctx, input_packet) >= 0) {
+        if (input_packet->stream_index == video_stream_idx) {
+            // 解码 H.265
+            if (avcodec_send_packet(decoder_ctx, input_packet) < 0) {
+                std::cerr << "Error sending packet to decoder\n";
+                break;
+            }
+
+            while (avcodec_receive_frame(decoder_ctx, decoded_frame) == 0) {
+                // 编码 H.264
+                if (avcodec_send_frame(encoder_ctx, decoded_frame) < 0) {
+                    std::cerr << "Error sending frame to encoder\n";
+                    break;
+                }
+
+                while (avcodec_receive_packet(encoder_ctx, output_packet) == 0) {
+                    // 写入输出文件
+                    av_packet_rescale_ts(output_packet, encoder_ctx->time_base, output_stream->time_base);
+                    output_packet->stream_index = output_stream->index;
+                    if (av_interleaved_write_frame(output_ctx, output_packet) < 0) {
+                        std::cerr << "Error writing packet\n";
+                        break;
+                    }
+                    av_packet_unref(output_packet);
+                }
+            }
+        }
+        av_packet_unref(input_packet);
+    }
+
+    // 8. 冲刷编码器缓冲区
+    if (avcodec_send_frame(encoder_ctx, nullptr) == 0) {
+        while (avcodec_receive_packet(encoder_ctx, output_packet) == 0) {
+            av_packet_rescale_ts(output_packet, encoder_ctx->time_base, output_stream->time_base);
+            output_packet->stream_index = output_stream->index;
+            av_interleaved_write_frame(output_ctx, output_packet);
+            av_packet_unref(output_packet);
+        }
+    }
+
+    // 9. 清理资源
+    av_write_trailer(output_ctx);
+    avformat_close_input(&input_ctx);
+    if (output_ctx && !(output_ctx->oformat->flags & AVFMT_NOFILE)) {
+        avio_closep(&output_ctx->pb);
+    }
+    avformat_free_context(output_ctx);
+    avcodec_free_context(&decoder_ctx);
+    avcodec_free_context(&encoder_ctx);
+    av_frame_free(&decoded_frame);
+    av_packet_free(&input_packet);
+    av_packet_free(&output_packet);
+
+    std::cout << "Transcoding completed successfully!\n";
+    return 0;
 }
 
 void FindEncoders()
