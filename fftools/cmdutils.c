@@ -30,7 +30,7 @@
    references to libraries that are not being built. */
 
 #include "config.h"
-#include "va_copy.h"
+#include "compat/va_copy.h"
 #include "libavformat/avformat.h"
 #include "libswscale/swscale.h"
 #include "libswscale/version.h"
@@ -39,10 +39,10 @@
 #include "libavutil/avstring.h"
 #include "libavutil/channel_layout.h"
 #include "libavutil/display.h"
-#include "getenv_utf8.h"
+#include "libavutil/getenv_utf8.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/imgutils.h"
-#include "libm.h"
+#include "libavutil/libm.h"
 #include "libavutil/parseutils.h"
 #include "libavutil/eval.h"
 #include "libavutil/dict.h"
@@ -52,7 +52,7 @@
 #include "opt_common.h"
 #ifdef _WIN32
 #include <windows.h>
-#include "w32dlfcn.h"
+#include "compat/w32dlfcn.h"
 #endif
 
 AVDictionary *sws_dict;

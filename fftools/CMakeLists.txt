@@ -1,6 +1,6 @@
 ﻿cmake_minimum_required(VERSION 3.16)
 # 这里是工程名称  C工程
-project(FFplay_debug C)
+project(fftools C)
 
 # set(CMAKE_C_STANDARD 99)
 
@@ -29,12 +29,52 @@ link_directories(${FFMPEG_DIR}/lib/)
 link_directories(${SDL2_DIR}/lib/)
 
 #将指定文件设置在FFmpeg_test_source变量中
-file(GLOB FFplay_debug_source ${CMAKE_SOURCE_DIR}/*.*)
+file(GLOB ffmpeg_sources ${CMAKE_SOURCE_DIR}/*.*)
+list(FILTER ffmpeg_sources EXCLUDE REGEX "ffplay.c")
+list(FILTER ffmpeg_sources EXCLUDE REGEX "ffprobe.c")
 
-add_executable(FFplay_debug ${FFplay_debug_source} cmdutils.c)
+add_executable(ffmpeg_debug ${ffmpeg_sources})
 
 #链接库
-target_link_libraries(FFplay_debug
+target_link_libraries(ffmpeg_debug
+        #FFmpeg 库
+        avcodec
+        avdevice
+        postproc
+        avfilter
+        avformat
+        avutil
+        swresample
+        swscale
+        # SDL2库
+        SDL2
+        )
+
+file(GLOB ffplay_sources ${CMAKE_SOURCE_DIR}/*.*)
+list(FILTER ffplay_sources EXCLUDE REGEX "ffmpeg.c")
+list(FILTER ffplay_sources EXCLUDE REGEX "ffprobe.c")
+
+add_executable(ffplay_debug ${ffplay_sources})
+target_link_libraries(ffplay_debug
+        #FFmpeg 库
+        avcodec
+        avdevice
+        postproc
+        avfilter
+        avformat
+        avutil
+        swresample
+        swscale
+        # SDL2库
+        SDL2
+        )
+
+file(GLOB ffprobe_sources ${CMAKE_SOURCE_DIR}/*.*)
+list(FILTER ffprobe_sources EXCLUDE REGEX "ffmpeg.c")
+list(FILTER ffprobe_sources EXCLUDE REGEX "ffplay.c")
+
+add_executable(ffprobe_debug ${ffprobe_sources})
+target_link_libraries(ffprobe_debug
         #FFmpeg 库
         avcodec
         avdevice
