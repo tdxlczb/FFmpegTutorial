@@ -25,8 +25,8 @@
 #include <windows.h>
 
 #include "config.h"
-//#include "libavutil/macros.h"
-#include "wchar_filename.h"
+#include "libavutil/macros.h"
+#include "libavutil/wchar_filename.h"
 
 static inline wchar_t *get_module_filename(HMODULE module)
 {

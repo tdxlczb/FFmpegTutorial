@@ -51,7 +51,7 @@ target_link_libraries(ffmpeg_debug
         )
 
 file(GLOB ffplay_sources ${CMAKE_SOURCE_DIR}/*.*)
-list(FILTER ffplay_sources EXCLUDE REGEX "ffmpeg.c")
+list(FILTER ffplay_sources EXCLUDE REGEX "ffmpeg*")
 list(FILTER ffplay_sources EXCLUDE REGEX "ffprobe.c")
 
 add_executable(ffplay_debug ${ffplay_sources})
@@ -70,7 +70,7 @@ target_link_libraries(ffplay_debug
         )
 
 file(GLOB ffprobe_sources ${CMAKE_SOURCE_DIR}/*.*)
-list(FILTER ffprobe_sources EXCLUDE REGEX "ffmpeg.c")
+list(FILTER ffprobe_sources EXCLUDE REGEX "ffmpeg*")
 list(FILTER ffprobe_sources EXCLUDE REGEX "ffplay.c")
 
 add_executable(ffprobe_debug ${ffprobe_sources})
