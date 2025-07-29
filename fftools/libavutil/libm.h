@@ -27,9 +27,9 @@
 
 #include <math.h>
 #include "config.h"
-//#include "attributes.h"
-//#include "intfloat.h"
-//#include "mathematics.h"
+#include "attributes.h"
+#include "intfloat.h"
+#include "mathematics.h"
 
 #if HAVE_MIPSFPU && HAVE_INLINE_ASM
 #include "libavutil/mips/libm_mips.h"
