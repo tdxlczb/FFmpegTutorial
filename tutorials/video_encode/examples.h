@@ -18,7 +18,12 @@ extern "C"
 #include <libswresample/swresample.h>
 }
 
+struct CmdData
+{
+    bool isStop = false;
+};
+
 bool VideoTranscode(const std::string& inputPath, const std::string& outputPath, const std::string& codecName);
-int VideoTranscode2(const std::string& inputPath, const std::string& outputPath, const std::string& codecName);
+int VideoTranscode2(const std::string& inputPath, const std::string& outputPath, const std::string& codecName, CmdData& cmd);
 
 void FindEncoders();

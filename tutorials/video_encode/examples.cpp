@@ -239,21 +239,42 @@ bool VideoTranscode(const std::string& inputPath, const std::string& outputPath,
     return true;
 }
 
-int VideoTranscode2(const std::string& inputPath, const std::string& outputPath, const std::string& codecName)
+int VideoTranscode2(const std::string& inputPath, const std::string& outputPath, const std::string& codecName, CmdData& cmd)
 {
-    // 2. 打开输入文件
+    // 打开输入文件
     AVFormatContext* input_ctx = nullptr;
-    if (avformat_open_input(&input_ctx, inputPath.c_str(), nullptr, nullptr) < 0) {
+    
+    //配置该流的ffmpeg设置
+    AVDictionary* pOptDict = NULL;
+    av_dict_set(&pOptDict, "stimeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
+    av_dict_set(&pOptDict, "timeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
+    av_dict_set(&pOptDict, "buffer_size", "8192000", 0);//控制解码器或编码器的内部缓冲区大小,配置8M缓冲以适应高分辨率视频
+    av_dict_set(&pOptDict, "recv_buffer_size", "4096000", 0);     // 防止花屏, max 4M.:用于控制网络接收缓冲区大小，适用于高带宽或高延迟的网络环境
+    av_dict_set(&pOptDict, "tune", "stillimage,fastdecode,zerolatency", 0);//优化静态图像编码,快速解码和低延时传输
+    av_dict_set(&pOptDict, "rtsp_transport", "tcp", 0);//tcp拉流，尽量保证不丢包
+    int ret = avformat_open_input(&input_ctx, inputPath.c_str(), nullptr, &pOptDict);
+    av_dict_free(&pOptDict);
+    pOptDict = nullptr;
+    if (ret < 0) {
         std::cerr << "Could not open input file\n";
         return -1;
     }
 
+    //if (avformat_open_input(&input_ctx, inputPath.c_str(), nullptr, nullptr) < 0) {
+    //    std::cerr << "Could not open input file\n";
+    //    return -1;
+    //}
+
+    // 打印输入信息
+    av_dump_format(input_ctx, 0, inputPath.c_str(), 0);
+
+    // 获取流信息
     if (avformat_find_stream_info(input_ctx, nullptr) < 0) {
         std::cerr << "Could not find stream info\n";
         return -1;
     }
 
-    // 3. 查找视频流
+    // 查找视频流
     int video_stream_idx = -1;
     AVCodecParameters* codec_params = nullptr;
     for (unsigned int i = 0; i < input_ctx->nb_streams; i++) {
@@ -268,8 +289,9 @@ int VideoTranscode2(const std::string& inputPath, const std::string& outputPath,
         std::cerr << "No video stream found\n";
         return -1;
     }
+    AVStream* videoStream = input_ctx->streams[video_stream_idx];
 
-    // 4. 初始化 H.265 解码器
+    // 初始化解码器
     const AVCodec* decoder = avcodec_find_decoder(codec_params->codec_id);
     if (!decoder) {
         std::cerr << "Unsupported codec\n";
@@ -287,20 +309,41 @@ int VideoTranscode2(const std::string& inputPath, const std::string& outputPath,
         return -1;
     }
 
-    // 5. 初始化 H.264 编码器
-    const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_H264);
+    // 准备输出文件
+    // 分配输出格式上下文
+    AVFormatContext* output_ctx = nullptr;
+    if (avformat_alloc_output_context2(&output_ctx, nullptr, nullptr, outputPath.c_str()) < 0) {
+        std::cerr << "Failed to create output context\n";
+        return -1;
+    }
+
+    // 创建视频流
+    AVStream* output_stream = avformat_new_stream(output_ctx, nullptr);
+    if (!output_stream) {
+        std::cerr << "Failed to create output stream\n";
+        return -1;
+    }
+
+    // 初始化编码器
+    const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_HEVC);
     if (!encoder) {
         std::cerr << "H.264 encoder not found\n";
         return -1;
     }
 
+    // 设置编码器上下文
     AVCodecContext* encoder_ctx = avcodec_alloc_context3(encoder);
+    // 配置编码参数
+    encoder_ctx->codec_id = AV_CODEC_ID_HEVC;
+    encoder_ctx->codec_type = AVMEDIA_TYPE_VIDEO;
+    encoder_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
     encoder_ctx->width = decoder_ctx->width;
     encoder_ctx->height = decoder_ctx->height;
-    encoder_ctx->pix_fmt = decoder_ctx->pix_fmt;
-    encoder_ctx->time_base = { 1, 25 }; // 25 FPS (adjust as needed)
-    encoder_ctx->bit_rate = 4000000;  // 4 Mbps (adjust as needed)
-    encoder_ctx->gop_size = 10;       // Keyframe interval
+    encoder_ctx->time_base = videoStream->time_base;
+    encoder_ctx->framerate = { 25, 1 };
+    encoder_ctx->gop_size = 10;
+    encoder_ctx->max_b_frames = 1;
+    encoder_ctx->bit_rate = 400000;
 
     // 启用 CRF 质量模式
     //encoder_ctx->bit_rate = 0;
@@ -309,30 +352,19 @@ int VideoTranscode2(const std::string& inputPath, const std::string& outputPath,
     //encoder_ctx->gop_size = 30;
     //encoder_ctx->max_b_frames = 2;
 
-
+    // 打开编码器
     if (avcodec_open2(encoder_ctx, encoder, nullptr) < 0) {
         std::cerr << "Failed to open encoder\n";
         return -1;
     }
 
-    // 6. 准备输出文件
-    AVFormatContext* output_ctx = nullptr;
-    if (avformat_alloc_output_context2(&output_ctx, nullptr, nullptr, outputPath.c_str()) < 0) {
-        std::cerr << "Failed to create output context\n";
-        return -1;
-    }
-
-    AVStream* output_stream = avformat_new_stream(output_ctx, encoder);
-    if (!output_stream) {
-        std::cerr << "Failed to create output stream\n";
-        return -1;
-    }
-
+    // 将编码器参数复制到流
     if (avcodec_parameters_from_context(output_stream->codecpar, encoder_ctx) < 0) {
         std::cerr << "Failed to copy encoder params\n";
         return -1;
     }
 
+    // 打开输出文件
     if (!(output_ctx->oformat->flags & AVFMT_NOFILE)) {
         if (avio_open(&output_ctx->pb, outputPath.c_str(), AVIO_FLAG_WRITE) < 0) {
             std::cerr << "Failed to open output file\n";
@@ -340,18 +372,51 @@ int VideoTranscode2(const std::string& inputPath, const std::string& outputPath,
         }
     }
 
+    // 写入文件头
     if (avformat_write_header(output_ctx, nullptr) < 0) {
         std::cerr << "Failed to write header\n";
         return -1;
     }
 
-    // 7. 解码→编码循环
+    // 解码→编码循环
     AVPacket* input_packet = av_packet_alloc();
     AVFrame* decoded_frame = av_frame_alloc();
     AVPacket* output_packet = av_packet_alloc();
+    int firstPts = 0;
+    int frameIndex = 0;
 
-    while (av_read_frame(input_ctx, input_packet) >= 0) {
+    SwsContext* sws_ctx = nullptr;
+
+    // 创建RGB视频帧
+    AVFrame* frameRGB = av_frame_alloc();
+    av_image_alloc(frameRGB->data, frameRGB->linesize, decoder_ctx->width, decoder_ctx->height, AV_PIX_FMT_BGR24, AV_INPUT_BUFFER_PADDING_SIZE);
+
+    AVFrame* frameWrite = av_frame_alloc();
+    frameWrite->format = decoder_ctx->pix_fmt;
+    frameWrite->width = decoder_ctx->width;
+    frameWrite->height = decoder_ctx->height;
+    if (av_frame_get_buffer(frameWrite, 32) < 0) {
+        std::cerr << "Could not allocate frame data" << std::endl;
+        return -1;
+    }
+
+    auto      timeBase = videoStream->time_base;
+    // 获取FPS
+    double    fps = av_q2d(videoStream->avg_frame_rate);
+    // 获取总的帧数量
+    auto      frameCount = videoStream->nb_frames;
+    int       gopSize = decoder_ctx->gop_size;
+    double    perFrameTime = av_q2d(videoStream->time_base);
+    int       lastFramePts = 0;
+    while (!cmd.isStop)
+    { 
+        int ret = av_read_frame(input_ctx, input_packet);
+        if (ret < 0) {
+            std::cerr << "av_read_frame error:" << ret << "\n";
+            continue;
+        }
         if (input_packet->stream_index == video_stream_idx) {
+            std::cout << "packet pts:" << input_packet->pts << std::endl;
             // 解码 H.265
             if (avcodec_send_packet(decoder_ctx, input_packet) < 0) {
                 std::cerr << "Error sending packet to decoder\n";
@@ -359,16 +424,59 @@ int VideoTranscode2(const std::string& inputPath, const std::string& outputPath,
             }
 
             while (avcodec_receive_frame(decoder_ctx, decoded_frame) == 0) {
+                {
+                    if (!sws_ctx) {
+                        sws_ctx = sws_getContext(decoder_ctx->width, decoder_ctx->height, decoder_ctx->pix_fmt, decoder_ctx->width, decoder_ctx->height, AV_PIX_FMT_BGR24, SWS_BILINEAR, NULL, NULL, NULL);
+                    }
+                    ret = sws_scale(sws_ctx, decoded_frame->data, decoded_frame->linesize, 0, decoder_ctx->height, frameRGB->data, frameRGB->linesize);
+                    if (ret)
+                    {
+                        // 保存图片
+                        char filename[100];
+                        sprintf(filename, "E:\\code\\media\\temp\\%d.jpg", frameIndex);
+                        cv::Mat mat = cv::Mat(decoder_ctx->height, decoder_ctx->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
+                        cv::imwrite(filename, mat);
+                    }
+                }
+                std::cout << "frame index:" << frameIndex << ", pts:" << decoded_frame->pts << std::endl;
+                // 准备帧数据
+                //if (av_frame_make_writable(frameWrite) < 0) {
+                //    std::cerr << "Frame not writable" << std::endl;
+                //    return -1;
+                //}
+                //av_image_copy(frameWrite->data, frameWrite->linesize,
+                //    (const uint8_t**)decoded_frame->data, decoded_frame->linesize,
+                //    (AVPixelFormat)decoded_frame->format, decoded_frame->width, decoded_frame->height);
+
+                if (frameIndex == 0) {
+                    if (decoded_frame->pts < 0) {
+                        frameWrite->pts = 0;
+                        decoded_frame->pts = 0;
+                    }
+                }
+                frameIndex++;
+
                 // 编码 H.264
                 if (avcodec_send_frame(encoder_ctx, decoded_frame) < 0) {
                     std::cerr << "Error sending frame to encoder\n";
                     break;
                 }
 
-                while (avcodec_receive_packet(encoder_ctx, output_packet) == 0) {
-                    // 写入输出文件
+                while (ret >= 0) {
+                    ret = avcodec_receive_packet(encoder_ctx, output_packet);
+                    if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+                        break;
+                    }
+                    else if (ret < 0) {
+                        std::cerr << "Error during encoding" << std::endl;
+                        break;
+                    }
+
+                    // 调整时间戳
                     av_packet_rescale_ts(output_packet, encoder_ctx->time_base, output_stream->time_base);
                     output_packet->stream_index = output_stream->index;
+
+                    // 写入压缩帧
                     if (av_interleaved_write_frame(output_ctx, output_packet) < 0) {
                         std::cerr << "Error writing packet\n";
                         break;

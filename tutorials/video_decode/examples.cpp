@@ -35,7 +35,20 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
 
     // 打开文件
     AVFormatContext* formatContext = nullptr;
-    int ret = avformat_open_input(&formatContext, filePath.c_str(), nullptr, nullptr);
+    int ret;
+    {//配置该流的ffmpeg设置
+        AVDictionary* pOptDict = NULL;
+        av_dict_set(&pOptDict, "stimeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
+        av_dict_set(&pOptDict, "timeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
+        av_dict_set(&pOptDict, "buffer_size", "8192000", 0);//控制解码器或编码器的内部缓冲区大小,配置8M缓冲以适应高分辨率视频
+        av_dict_set(&pOptDict, "recv_buffer_size", "4096000", 0);     // 防止花屏, max 4M.:用于控制网络接收缓冲区大小，适用于高带宽或高延迟的网络环境
+        av_dict_set(&pOptDict, "tune", "stillimage,fastdecode,zerolatency", 0);//优化静态图像编码,快速解码和低延时传输
+        av_dict_set(&pOptDict, "rtsp_transport", "tcp", 0);//tcp拉流，尽量保证不丢包
+        ret = avformat_open_input(&formatContext, filePath.c_str(), nullptr, &pOptDict);
+        av_dict_free(&pOptDict);
+        pOptDict = nullptr;
+    }
+    //int ret = avformat_open_input(&formatContext, filePath.c_str(), nullptr, nullptr);
     if (AVERROR(ret))
     {
         PRINT_FUNC_ERROR(avformat_open_input, ret);
@@ -91,7 +104,7 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
         avformat_network_deinit();
         return false;
     }
-    std::string hwdevice_name = "dxva2";
+    std::string hwdevice_name = "";// "dxva2";
     AVHWDeviceType hwDeviceType = AV_HWDEVICE_TYPE_NONE;
     if (!hwdevice_name.empty()) {
         hwDeviceType = av_hwdevice_find_type_by_name(hwdevice_name.c_str());
@@ -208,7 +221,7 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
             {
                 auto duration = std::chrono::system_clock::now().time_since_epoch();
                 auto ts       = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-                LOG_INFO << "packetIndex:" << packetIndex << ", packetFlags:" << packet->flags << ", ts:" << ts
+                LOG_INFO << "packetIndex:" << packetIndex << ", packetFlags:" << packet->flags << ", ts:" << ts << ", pts:"<< packet->pts << ", dts:" << packet->dts
                          << std::endl;
             }
             //if (packet.flags != AV_PKT_FLAG_KEY)
@@ -276,10 +289,10 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
                 if (ret)
                 {
                     // 保存图片
-                    //char filename[100];
-                    //sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frameIndex);
-                    //cv::Mat mat = cv::Mat(frame->height, frame->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
-                    //cv::imwrite(filename, mat);
+                    char filename[100];
+                    sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frame->pts);
+                    cv::Mat mat = cv::Mat(frame->height, frame->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
+                    cv::imwrite(filename, mat);
                 }
                 {
                     auto duration = std::chrono::system_clock::now().time_since_epoch();

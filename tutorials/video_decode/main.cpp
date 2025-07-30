@@ -62,9 +62,9 @@ int main()
     InitLogger();
     LOG_INFO << "==================================";
     std::string output    = R"(E:\code\media\temp)";
-    std::string filePath  = R"(E:\code\media\BaiduSyncdisk.mp4)";
-    std::string filePath2 = R"(E:\code\media\temp\dump.h264)";
-    VideoToImages(filePath, output);
+    std::string filePath  = R"(E:\code\media\itc\47.5国标ipc_20250728191854_279533100_20250728191914_378975200.mp4)";
+    std::string filePath2 = R"(E:\code\media\temp\dump.mp4)";
+    VideoToImages(filePath2, output);
     //multi_thread_test();
     //video_to_image();
 
