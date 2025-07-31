@@ -13,6 +13,7 @@ extern "C"
 #include <libavutil/error.h>
 #include <libavutil/imgutils.h>
 #include <libavutil/frame.h>
+#include <libavutil/opt.h>
 #include <libavutil/time.h>
 #include <libswscale/swscale.h>
 #include <libswresample/swresample.h>
@@ -25,5 +26,6 @@ struct CmdData
 
 bool VideoTranscode(const std::string& inputPath, const std::string& outputPath, const std::string& codecName);
 int VideoTranscode2(const std::string& inputPath, const std::string& outputPath, const std::string& codecName, CmdData& cmd);
+int VideoRecord(const std::string& inputPath, const std::string& outputPath, CmdData& cmd);
 
 void FindEncoders();
