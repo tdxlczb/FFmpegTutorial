@@ -515,6 +515,8 @@ int VideoTranscode2(const std::string& inputPath, const std::string& outputPath,
     return 0;
 }
 
+#include <fstream>
+
 int VideoRecord(const std::string& inputPath, const std::string& outputPath, CmdData& cmd)
 {
     std::cout << "record start" << std::endl;
@@ -691,8 +693,9 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
     SwrContext* swr_ctx = nullptr;
 
     if (audio_stream_idx != -1) {
-        const AVCodec* codec = avcodec_find_encoder_by_name("libfdk_aac");
+        //const AVCodec* audio_encoder = avcodec_find_encoder_by_name("libfdk_aac");
         const AVCodec* audio_encoder = avcodec_find_encoder(AV_CODEC_ID_AAC);
+        // AAC编码器要求每帧1024个样本，因此需要使用缓冲队列，否则音频帧重采样后一定不是1024，写入frame后不够1024的空间会被补充为0
         if (!audio_encoder) {
             std::cerr << "未找到AAC编码器" << std::endl;
             avcodec_free_context(&video_encoder_ctx);
@@ -711,11 +714,11 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
         }
 
         audio_encoder_ctx = avcodec_alloc_context3(audio_encoder);
-        audio_encoder_ctx->sample_fmt = AV_SAMPLE_FMT_FLTP;
+        audio_encoder_ctx->sample_fmt = audio_encoder->sample_fmts[0];
         audio_encoder_ctx->bit_rate = 128000; //128kbps
         audio_encoder_ctx->sample_rate = 8000;
         audio_encoder_ctx->channel_layout = AV_CH_LAYOUT_STEREO;
-        audio_encoder_ctx->channels = 2;
+        audio_encoder_ctx->channels = av_get_channel_layout_nb_channels(audio_encoder_ctx->channel_layout);
         audio_encoder_ctx->time_base = { 1, audio_encoder_ctx->sample_rate };
         //这里计算编码一帧的采样点数，根据解码和编码的采样率进行转换
         //int max_out_nb_samples = av_rescale_rnd(audio_decoder_ctx->frame_size, audio_encoder_ctx->sample_rate, audio_decoder_ctx->sample_rate, AV_ROUND_UP);
@@ -752,7 +755,7 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
         //av_opt_set_sample_fmt(swr_ctx, "in_sample_fmt", static_cast<AVSampleFormat>(audio_in_stream->codecpar->format), 0);
         //av_opt_set_sample_fmt(swr_ctx, "out_sample_fmt", AV_SAMPLE_FMT_FLTP, 0);
 
-        swr_ctx = swr_alloc_set_opts(nullptr, AV_CH_LAYOUT_STEREO, AV_SAMPLE_FMT_FLTP, 8000,
+        swr_ctx = swr_alloc_set_opts(nullptr, audio_encoder_ctx->channel_layout, audio_encoder_ctx->sample_fmt, audio_encoder_ctx->sample_rate,
             audio_in_stream->codecpar->channel_layout, static_cast<AVSampleFormat>(audio_in_stream->codecpar->format), audio_in_stream->codecpar->sample_rate, 0, NULL);
         ret = swr_init(swr_ctx);
         if (AVERROR(ret)) {
@@ -813,6 +816,20 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
     int video_frame_index = 0;
     int audio_frame_index = 0;
     int audio_frame_pts = 0;
+
+    std::ofstream ofs;
+    ofs.open(R"(E:\code\media\temp\dump1.pcm)", std::ios::binary);
+    bool isOpen = ofs.is_open();
+    // 创建 FIFO 缓冲区
+    AVAudioFifo* fifo = av_audio_fifo_alloc(
+        audio_encoder_ctx->sample_fmt,  // 采样格式（如 Planar Float）
+        audio_encoder_ctx->channels,    // 声道数（如立体声）
+        1024 * 2                        // 初始容量（样本数）
+    );
+    if (!fifo) {
+        std::cerr << "create audio fifo failed" << std::endl;
+    }
+
     while (av_read_frame(input_ctx, input_packet) >= 0) {
         // 检查是否超过最大录制时间
         //if (av_gettime() - start_time > max_duration) {
@@ -859,7 +876,7 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
                     //av_frame_copy(frame, decoded_frame);
                     frame = decoded_frame;
                 //}
-
+                std::cout << "frame index:" << video_frame_index << ", pts:" << decoded_frame->pts << std::endl;
                 if (video_frame_index == 0) {
                     if (decoded_frame->pts < 0) {
                         decoded_frame->pts = 0;
@@ -933,11 +950,34 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
                     break;
                 }
 
-                resampled_frame->pts = audio_frame_pts;
+                av_audio_fifo_write(fifo, (void**)resampled_frame->data, resampled_frame->nb_samples);
+                //int out_channels = av_get_channel_layout_nb_channels(audio_encoder_ctx->channel_layout);
+                //int out_spb = av_get_bytes_per_sample(audio_encoder_ctx->sample_fmt);
+                //if (ofs.is_open()) {
+                //    ofs.write(reinterpret_cast<const char*>(resampled_frame->data[0]), out_spb * out_channels * resampled_frame->nb_samples);
+                //    ofs.flush();
+                //}
+                //resampled_frame->pts = audio_frame_pts;
                 audio_frame_pts += resampled_frame->nb_samples;
+
+                if (av_audio_fifo_size(fifo) < audio_encoder_ctx->frame_size)
+                    continue;
+
+                // 重采样音频
+                AVFrame* write_frame = av_frame_alloc();
+                write_frame->sample_rate = audio_encoder_ctx->sample_rate;
+                write_frame->channel_layout = audio_encoder_ctx->channel_layout;
+                write_frame->channels = audio_encoder_ctx->channels;
+                write_frame->format = audio_encoder_ctx->sample_fmt;
+                write_frame->nb_samples = audio_encoder_ctx->frame_size;
+                ret = av_frame_get_buffer(write_frame, 0);
+
+                av_audio_fifo_read(fifo, (void**)write_frame->data, write_frame->nb_samples);
+
                 // 编码音频帧
-                ret = avcodec_send_frame(audio_encoder_ctx, resampled_frame);
+                ret = avcodec_send_frame(audio_encoder_ctx, write_frame);
                 if (ret < 0) {
+                    av_frame_free(&write_frame);
                     av_frame_free(&resampled_frame);
                     av_frame_free(&decoded_frame);
                     break;
@@ -962,6 +1002,7 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
                     }
                     av_packet_unref(out_packet);
                 }
+                av_frame_free(&write_frame);
                 av_frame_free(&resampled_frame);
                 av_frame_free(&decoded_frame);
             }
@@ -969,7 +1010,7 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
 
         av_packet_unref(input_packet);
     }
-
+    ofs.close();
     // 冲刷编码器
     // 冲刷视频编码器
     avcodec_send_frame(video_encoder_ctx, nullptr);
@@ -998,7 +1039,7 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
             av_packet_unref(out_packet);
         }
     }
-
+    av_audio_fifo_free(fifo);
     // 写入文件尾
     av_write_trailer(output_ctx);
 
