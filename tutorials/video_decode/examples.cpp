@@ -104,7 +104,7 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
         avformat_network_deinit();
         return false;
     }
-    std::string hwdevice_name = "";// "dxva2";
+    std::string hwdevice_name = "dxva2";
     AVHWDeviceType hwDeviceType = AV_HWDEVICE_TYPE_NONE;
     if (!hwdevice_name.empty()) {
         hwDeviceType = av_hwdevice_find_type_by_name(hwdevice_name.c_str());
@@ -167,7 +167,8 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
     // 获取总的帧数量
     auto      frameCount  = videoStream->nb_frames;
     int       gopSize     = codecContext->gop_size;
-    auto      dstFormat  = AV_PIX_FMT_BGR24;
+    //auto      dstFormat   = AV_PIX_FMT_BGR24;
+    auto      dstFormat   = AV_PIX_FMT_YUV420P;
 
     LOG_INFO << "fps=" << (int) fps << ", frameCount=" << frameCount << std::endl;
     SwsContext* sws_ctx = nullptr;
@@ -189,15 +190,16 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
     //    return false;
     //}
     // 创建RGB视频帧
-    //AVFrame* frameRGB = av_frame_alloc();
-    //int      numBytes = av_image_get_buffer_size(dstFormat, codecContext->width, codecContext->height, AV_INPUT_BUFFER_PADDING_SIZE);
-    //uint8_t* buffer   = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t)); //注意，这里给frameRGB申请的buffer，需要单独释放
-    //av_image_fill_arrays(
-    //    frameRGB->data, frameRGB->linesize, buffer, dstFormat, codecContext->width, codecContext->height, AV_INPUT_BUFFER_PADDING_SIZE
-    //);
+    AVFrame* frameRGB = av_frame_alloc();
+    int      numBytes = av_image_get_buffer_size(dstFormat, codecContext->width, codecContext->height, AV_INPUT_BUFFER_PADDING_SIZE);
+    uint8_t* bufferRGB   = (uint8_t*) av_malloc(numBytes * sizeof(uint8_t)); //注意，这里给frameRGB申请的buffer，需要单独释放
+    av_image_fill_arrays(
+        frameRGB->data, frameRGB->linesize, bufferRGB, dstFormat, codecContext->width, codecContext->height, AV_INPUT_BUFFER_PADDING_SIZE
+    );
 
     //上面创建RGB视频帧的操作，可以用av_image_alloc替代
     //av_image_alloc(frameRGB->data, frameRGB->linesize, codecContext->width, codecContext->height, destFormat, AV_INPUT_BUFFER_PADDING_SIZE);
+    //注意，使用av_frame_get_buffer分配的内存是不连续的，例如data[0],data[1]不在同一块内存中，在保存yuv这样的多lines的数据要注意取数据的方式
 
     // 读取视频帧并保存为图片
     int       frameIndex  = -1;
@@ -278,21 +280,31 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
                 //}
 
                 if (!sws_ctx) {
-                    sws_ctx = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format, frame->width, frame->height, dstFormat, SWS_BILINEAR, NULL, NULL, NULL);
+                    sws_ctx = sws_getContext(frame->width, frame->height, (AVPixelFormat)frame->format, frame->width, frame->height, dstFormat, SWS_FAST_BILINEAR, NULL, NULL, NULL);
                 }
-                // 创建RGB视频帧
-                AVFrame* frameRGB = av_frame_alloc();
-                int numBytes = av_image_get_buffer_size(dstFormat, frame->width, frame->height, AV_INPUT_BUFFER_PADDING_SIZE);
-                uint8_t* bufferRGB = (uint8_t*)av_malloc(numBytes * sizeof(uint8_t)); // 注意，这里给frameRGB申请的buffer，需要单独释放
-                av_image_fill_arrays(frameRGB->data, frameRGB->linesize, bufferRGB, dstFormat, frame->width, frame->height, AV_INPUT_BUFFER_PADDING_SIZE);
+                //// 创建RGB视频帧
+                //AVFrame* frameRGB = av_frame_alloc();
+                //int numBytes = av_image_get_buffer_size(dstFormat, frame->width, frame->height, 1);
+                //uint8_t* bufferRGB = (uint8_t*)av_malloc(numBytes * sizeof(uint8_t)); // 注意，这里给frameRGB申请的buffer，需要单独释放
+                //av_image_fill_arrays(frameRGB->data, frameRGB->linesize, bufferRGB, dstFormat, frame->width, frame->height, 1);
                 int ret = sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, frameRGB->data, frameRGB->linesize);
                 if (ret)
                 {
-                    // 保存图片
+                    static int frameIndex = 0;
+                    cv::Mat yuv_mat = cv::Mat(frame->height * 3 / 2, frame->width, CV_8UC1, frameRGB->data[0], frameRGB->linesize[0]);
+                    // 转换为RGB
+                    cv::Mat rgb_mat;
+                    cv::cvtColor(yuv_mat, rgb_mat, cv::COLOR_YUV2BGR_I420);
                     char filename[100];
-                    sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frame->pts);
-                    cv::Mat mat = cv::Mat(frame->height, frame->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
-                    cv::imwrite(filename, mat);
+                    sprintf(filename, "E:\\code\\media\\temp\\%d.jpg", frameIndex);
+                    cv::imwrite(filename, rgb_mat);
+                    frameIndex++;
+
+                    //// 保存图片
+                    //char filename[100];
+                    //sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frame->pts);
+                    //cv::Mat mat = cv::Mat(frame->height, frame->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
+                    //cv::imwrite(filename, mat);
                 }
                 {
                     auto duration = std::chrono::system_clock::now().time_since_epoch();
@@ -302,16 +314,16 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
 
                 av_frame_free(&hwframe);
                 av_frame_free(&tempframe);
-                av_frame_free(&frameRGB);
-                av_freep(&bufferRGB);
+                //av_frame_free(&frameRGB);
+                //av_freep(&bufferRGB);
             }
         }
     }
     av_packet_free(&packet);
     //av_frame_free(&frame);
     //av_frame_free(&hwframe);
-    //av_frame_free(&frameRGB);
-    //av_freep(&buffer); //释放av_malloc申请的buffer，需要单独释放
+    av_frame_free(&frameRGB);
+    av_freep(&bufferRGB); //释放av_malloc申请的buffer，需要单独释放
     sws_freeContext(sws_ctx);
     avcodec_free_context(&codecContext);
     avformat_close_input(&formatContext);

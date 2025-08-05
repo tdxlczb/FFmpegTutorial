@@ -656,7 +656,7 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
     AVCodecContext* video_encoder_ctx = avcodec_alloc_context3(video_encoder);
     video_encoder_ctx->width = video_decoder_ctx->width;
     video_encoder_ctx->height = video_decoder_ctx->height;
-    video_encoder_ctx->pix_fmt = AV_PIX_FMT_YUVJ420P;
+    video_encoder_ctx->pix_fmt = AV_PIX_FMT_YUV420P;
     video_encoder_ctx->time_base = video_in_stream->time_base;  //如果写帧不更改pts，这里的time_base要和输入流保持一致，用于写帧时的pts转换
     //video_encoder_ctx->time_base = { 1, 25 };  // 假设25fps
     video_encoder_ctx->framerate = { 25, 1 };
@@ -1053,6 +1053,187 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
     if (audio_encoder_ctx) avcodec_free_context(&audio_encoder_ctx);
     avcodec_free_context(&video_decoder_ctx);
     avcodec_free_context(&video_encoder_ctx);
+    avformat_close_input(&input_ctx);
+    if (!(output_ctx->oformat->flags & AVFMT_NOFILE)) {
+        avio_closep(&output_ctx->pb);
+    }
+    avformat_free_context(output_ctx);
+
+    std::cout << "record success, saved file: " << output_filename << std::endl;
+    return 0;
+}
+
+int VideoRecordNoEncode(const std::string& inputPath, const std::string& outputPath, CmdData& cmd)
+{
+    std::cout << "record start" << std::endl;
+    // 初始化 FFmpeg
+    avformat_network_init();
+    av_log_set_level(AV_LOG_VERBOSE);  // 设置日志级别
+
+    const std::string rtsp_url = inputPath;
+    const std::string output_filename = outputPath;
+    const int record_duration = 60;  // 录制60秒
+
+    AVFormatContext* input_ctx = nullptr;
+    AVFormatContext* output_ctx = nullptr;
+
+    //================打开输入文件====================================
+    //配置该流的ffmpeg设置
+    AVDictionary* pOptDict = NULL;
+    av_dict_set(&pOptDict, "stimeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
+    av_dict_set(&pOptDict, "timeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
+    av_dict_set(&pOptDict, "buffer_size", "8192000", 0);//控制解码器或编码器的内部缓冲区大小,配置8M缓冲以适应高分辨率视频
+    av_dict_set(&pOptDict, "recv_buffer_size", "4096000", 0);     // 防止花屏, max 4M.:用于控制网络接收缓冲区大小，适用于高带宽或高延迟的网络环境
+    av_dict_set(&pOptDict, "tune", "stillimage,fastdecode,zerolatency", 0);//优化静态图像编码,快速解码和低延时传输
+    av_dict_set(&pOptDict, "rtsp_transport", "tcp", 0);//tcp拉流，尽量保证不丢包
+    int ret = avformat_open_input(&input_ctx, inputPath.c_str(), nullptr, &pOptDict);
+    av_dict_free(&pOptDict);
+    pOptDict = nullptr;
+    if (ret < 0) {
+        std::cerr << "could not open input file" << std::endl;
+        return -1;
+    }
+    //// 打开输入流
+    //if (avformat_open_input(&input_ctx, rtsp_url.c_str(), nullptr, nullptr) < 0) {
+    //    std::cerr << "无法打开输入流" << std::endl;
+    //    return -1;
+    //}
+
+    // 获取流信息
+    if (avformat_find_stream_info(input_ctx, nullptr) < 0) {
+        std::cerr << "could not find stream info" << std::endl;
+        avformat_close_input(&input_ctx);
+        return -1;
+    }
+
+    // 打印输入信息
+    av_dump_format(input_ctx, 0, rtsp_url.c_str(), 0);
+
+    // 查找视频和音频流
+    int video_stream_idx = -1;
+    int audio_stream_idx = -1;
+    for (unsigned int i = 0; i < input_ctx->nb_streams; i++) {
+        if (input_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            video_stream_idx = i;
+        }
+        else if (input_ctx->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            audio_stream_idx = i;
+        }
+    }
+
+    if (video_stream_idx == -1) {
+        std::cerr << "could not find video stream" << std::endl;
+        avformat_close_input(&input_ctx);
+        avformat_free_context(output_ctx);
+        return -1;
+    }
+    AVStream* video_in_stream = input_ctx->streams[video_stream_idx];
+    AVStream* audio_in_stream = nullptr;
+    if (audio_stream_idx != -1) {
+        audio_in_stream = input_ctx->streams[audio_stream_idx];
+    }
+
+    //================打开输出文件====================================
+    // 创建输出上下文
+    if (avformat_alloc_output_context2(&output_ctx, nullptr, "mov", output_filename.c_str()) < 0) {
+        std::cerr << "avformat_alloc_output_context2 failed" << std::endl;
+        avformat_close_input(&input_ctx);
+        return -1;
+    }
+
+    // 准备视频输出流
+    AVStream* video_out_stream = avformat_new_stream(output_ctx, nullptr);
+    if (!video_out_stream) {
+        std::cerr << "failed to create video stream" << std::endl;
+        avformat_close_input(&input_ctx);
+        avformat_free_context(output_ctx);
+        return -1;
+    }
+
+    ret = avcodec_parameters_copy(video_out_stream->codecpar, video_in_stream->codecpar);
+    if (ret < 0) {
+        std::cerr << "failed to copy video param" << std::endl;
+        avformat_close_input(&input_ctx);
+        avformat_free_context(output_ctx);
+        return -1;
+    }
+
+    // 准备音频输出流
+    AVStream* audio_out_stream = nullptr;
+    if (audio_stream_idx != -1) {
+        audio_out_stream = avformat_new_stream(output_ctx, nullptr);
+        if (!audio_out_stream) {
+            std::cerr << "创建音频输出流失败" << std::endl;
+            avformat_close_input(&input_ctx);
+            avformat_free_context(output_ctx);
+            return -1;
+        }
+        ret = avcodec_parameters_copy(audio_out_stream->codecpar, audio_in_stream->codecpar);
+        if (ret < 0) {
+            std::cerr << "failed to copy audio param" << std::endl;
+            avformat_close_input(&input_ctx);
+            avformat_free_context(output_ctx);
+            return -1;
+        }
+    }
+
+    // 打开输出文件
+    if (!(output_ctx->oformat->flags & AVFMT_NOFILE)) {
+        if (avio_open(&output_ctx->pb, output_filename.c_str(), AVIO_FLAG_WRITE) < 0) {
+            std::cerr << "could not open output file" << std::endl;
+            avformat_close_input(&input_ctx);
+            avformat_free_context(output_ctx);
+            return -1;
+        }
+    }
+
+    // 写入文件头
+    // "Could not find tag for codec pcm_alaw in stream"，表示当前容器格式不支持pcm_alaw编解码器，因为mp4是不支持保存pcm_alaw的，只有mov才同时支持pcm_alaw和h265
+    if (avformat_write_header(output_ctx, nullptr) < 0) {
+        std::cerr << "failed to write header" << std::endl;
+        avformat_close_input(&input_ctx);
+        if (!(output_ctx->oformat->flags & AVFMT_NOFILE)) {
+            avio_closep(&output_ctx->pb);
+        }
+        avformat_free_context(output_ctx);
+        return -1;
+    }
+
+    //================取帧写帧====================================
+    // 读取并转码数据
+    AVPacket* input_packet = av_packet_alloc();
+    int64_t start_time = av_gettime();
+    int64_t max_duration = record_duration * 1000000;  // 转换为微秒
+
+    while (av_read_frame(input_ctx, input_packet) >= 0) {
+        // 检查是否超过最大录制时间
+        //if (av_gettime() - start_time > max_duration) {
+        //    av_packet_unref(input_packet);
+        //    break;
+        //}
+        if (cmd.isStop)
+            break;
+
+        if (input_packet->stream_index == video_stream_idx) {
+            // 写入视频包
+            if (av_interleaved_write_frame(output_ctx, input_packet) < 0) {
+                std::cerr << "写入视频数据包错误" << std::endl;
+            }
+        }
+        else if (input_packet->stream_index == audio_stream_idx && audio_out_stream) {
+            // 写入音频包
+            if (av_interleaved_write_frame(output_ctx, input_packet) < 0) {
+                std::cerr << "写入音频数据包错误" << std::endl;
+            }
+        }
+        av_packet_unref(input_packet);
+    }
+
+    // 写入文件尾
+    av_write_trailer(output_ctx);
+
+    // 清理资源
+    av_packet_free(&input_packet);
     avformat_close_input(&input_ctx);
     if (!(output_ctx->oformat->flags & AVFMT_NOFILE)) {
         avio_closep(&output_ctx->pb);

@@ -15,8 +15,14 @@ extern "C"
 #include <libswresample/swresample.h>
 }
 
+struct CmdData
+{
+    bool isDebug = false;
+    bool isStop = false;
+};
+
 using DecodeCallback = std::function<void(uint8_t* data, uint64_t len, bool isEnd)>;
-bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, bool isDebug)
+bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, CmdData &cmd)
 {
     LOG_INFO << "start decode audio:" << filePath;
     avformat_network_init();
@@ -40,7 +46,7 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, bo
         return false;
     }
 
-    AVCodec* codec            = nullptr;
+    const AVCodec* codec            = nullptr;
     int      audioStreamIndex = av_find_best_stream(formatContext, AVMEDIA_TYPE_AUDIO, -1, -1, &codec, 0);
     if (audioStreamIndex < 0)
     {
@@ -82,7 +88,7 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, bo
     int            in_channels        = codecContext->channels;
     const int      out_sample_rate    = 16000;
     AVSampleFormat out_sfmt           = AV_SAMPLE_FMT_S16;
-    uint64_t       out_channel_layout = AV_CH_LAYOUT_MONO;
+    uint64_t       out_channel_layout = AV_CH_LAYOUT_STEREO;
     int            out_channels       = av_get_channel_layout_nb_channels(out_channel_layout);
     int            out_spb            = av_get_bytes_per_sample(out_sfmt);
 
@@ -110,10 +116,11 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, bo
 
     std::ofstream ofs1;
     std::ofstream ofs2;
-    if (isDebug)
+    if (cmd.isDebug)
     {
+        std::string outPath = R"(E:\code\media\temp\rtsp)";
         auto        fmtName = av_get_sample_fmt_name(in_sfmt);
-        std::string pcmPath = filePath + "_" + fmtName + "_" + std::to_string(in_channels) + "_" + std::to_string(in_sample_rate) + ".pcm";
+        std::string pcmPath = outPath + "_" + fmtName + "_" + std::to_string(in_channels) + "_" + std::to_string(in_sample_rate) + ".pcm";
         ofs1.open(pcmPath, std::ios::binary);
         if (!ofs1.is_open())
         {
@@ -123,7 +130,7 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, bo
         {
             auto        outfmtName = av_get_sample_fmt_name(out_sfmt);
             std::string resamplePcmPath =
-                filePath + "_" + outfmtName + "_" + std::to_string(out_channels) + "_" + std::to_string(out_sample_rate) + ".pcm";
+                outPath + "_" + outfmtName + "_" + std::to_string(out_channels) + "_" + std::to_string(out_sample_rate) + ".pcm";
             ofs2.open(resamplePcmPath, std::ios::binary);
             if (!ofs2.is_open())
             {
@@ -136,7 +143,7 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, bo
     int       packetIndex = -1;
     AVPacket* packet      = av_packet_alloc();
     AVFrame*  frame       = av_frame_alloc();
-    while (av_read_frame(formatContext, packet) >= 0)
+    while (!cmd.isStop && av_read_frame(formatContext, packet) >= 0)
     {
         if (packet->stream_index == audioStreamIndex)
         {
@@ -237,6 +244,7 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, bo
     return true;
 }
 #include <fstream>
+#include <thread>
 
 int main()
 {
@@ -244,7 +252,7 @@ int main()
     LOG_INFO << "==================================";
     //test();
     std::string output    = "E:\\res\\mca\\output";
-    std::string filePath  = "E:\\res\\mca\\test.mp4";
+    std::string filePath  = R"(D:\abcd\Hikvision_20250804205831_191254100_20250804205843_435776500.mp4)";
     std::string filePath1 = "E:\\res\\mca\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
     std::string filePath2 = "E:\\res\\mca\\1704177600496_4_0_13348651242807.ts";
     std::string filePath3 = "E:\\res\\mca\\1703762903540_2\\1703762903540_2_0_13348236794018.ts";
@@ -259,7 +267,17 @@ int main()
     //std::string filePath1 = "E:\\res\\mca\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
     //std::string filePath2 = R"(E:\res\mca\test.mp4)";
 
-    //AudioDecode(filePath6, NULL, true);
+    CmdData data;
+    data.isDebug = true;
+    std::thread th([&]() {
+        AudioDecode(filePath, NULL, data);
+        });
+    getchar();
+    data.isStop = true;
+    th.join();
+
+    return 0;
+    //AudioDecode(filePath, NULL, true);
     //getchar();
 
     std::string dir1 = R"(E:\res\mca\dvrStorage1231\media\edulyse-edge-windows\1703591015324_6)";
@@ -275,7 +293,7 @@ int main()
     {
         index++;
         auto startTime = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
-        bool ret       = AudioDecode(fileList[i], NULL, false);
+        bool ret       = AudioDecode(fileList[i], NULL, data);
         if (!ret)
         {
             std::cout << "err index=" << index << std::endl;

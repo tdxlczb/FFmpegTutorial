@@ -28,5 +28,6 @@ struct CmdData
 bool VideoTranscode(const std::string& inputPath, const std::string& outputPath, const std::string& codecName);
 int VideoTranscode2(const std::string& inputPath, const std::string& outputPath, const std::string& codecName, CmdData& cmd);
 int VideoRecord(const std::string& inputPath, const std::string& outputPath, CmdData& cmd);
+int VideoRecordNoEncode(const std::string& inputPath, const std::string& outputPath, CmdData& cmd);
 
 void FindEncoders();
