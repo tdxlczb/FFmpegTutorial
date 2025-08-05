@@ -173,11 +173,7 @@ bool VideoTranscode(const std::string& inputPath, const std::string& outputPath,
         {
             packetIndex++;
             LOG_INFO << "packetIndex:" << packetIndex << ", packetFlags:" << packet->flags << std::endl;
-            //if (packet.flags != AV_PKT_FLAG_KEY)
-            //{
-            //    continue;
-            //}
-
+            //bool isKeyFrame = packet->flags & AV_PKT_FLAG_KEY;
             if (avcodec_send_packet(decoderContext, packet) < 0)
             {
                 // 处理发送数据包到解码器失败的情况
@@ -1205,6 +1201,9 @@ int VideoRecordNoEncode(const std::string& inputPath, const std::string& outputP
     int64_t start_time = av_gettime();
     int64_t max_duration = record_duration * 1000000;  // 转换为微秒
 
+    int recordVideoPts = 0;
+    int recordAudioPts = 0;
+    bool bStartRecord = false;
     while (av_read_frame(input_ctx, input_packet) >= 0) {
         // 检查是否超过最大录制时间
         //if (av_gettime() - start_time > max_duration) {
@@ -1213,19 +1212,48 @@ int VideoRecordNoEncode(const std::string& inputPath, const std::string& outputP
         //}
         if (cmd.isStop)
             break;
+        bool isKeyFrame = input_packet->flags & AV_PKT_FLAG_KEY;
+        //10s后第一个视频关键帧开始录制，如果不从第一个关键帧开始，由于预测帧的数据不完整，会导致开始的一些帧显示异常
+        if (input_packet->stream_index == video_stream_idx && isKeyFrame && input_packet->pts > 900000)
+            bStartRecord = true;
+
+        if (!bStartRecord)
+            continue;
 
         if (input_packet->stream_index == video_stream_idx) {
+            std::cout << "video packet pts:" << input_packet->pts << ", dts:" << input_packet->dts << std::endl;
+            if (input_packet->pts == AV_NOPTS_VALUE) {
+                input_packet->pts = 0;
+            }
+            if (recordVideoPts == 0) {
+                recordVideoPts = input_packet->pts;
+                std::cout << "record video pts:" << recordVideoPts << std::endl;
+            }
+            input_packet->pts = input_packet->pts - recordVideoPts;
+            input_packet->dts = input_packet->dts - recordVideoPts;
             // 写入视频包
             if (av_interleaved_write_frame(output_ctx, input_packet) < 0) {
                 std::cerr << "写入视频数据包错误" << std::endl;
             }
+
         }
         else if (input_packet->stream_index == audio_stream_idx && audio_out_stream) {
+            std::cout << "=======audio packet pts:" << input_packet->pts << ", dts:" << input_packet->dts << std::endl;
+            if (input_packet->pts == AV_NOPTS_VALUE) {
+                input_packet->pts = 0;
+            }
+            if (recordAudioPts == 0) {
+                recordAudioPts = input_packet->pts;
+                std::cout << "record audio pts:" << recordAudioPts << std::endl;
+            }
+            input_packet->pts = input_packet->pts - recordAudioPts;
+            input_packet->dts = input_packet->dts - recordAudioPts;
             // 写入音频包
             if (av_interleaved_write_frame(output_ctx, input_packet) < 0) {
                 std::cerr << "写入音频数据包错误" << std::endl;
             }
         }
+        
         av_packet_unref(input_packet);
     }
 
