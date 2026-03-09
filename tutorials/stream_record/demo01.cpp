@@ -150,37 +150,60 @@ int write_packet_to_target(std::shared_ptr<AVPacket> packet)
     auto inputStream = av_inputCtx->streams[packet->stream_index];
     auto outputStream = av_outputCtx->streams[packet->stream_index];
 
+    int64_t pts = packet->pts;
+
     // 时间基转换
     av_packet_rescale_ts(packet.get(), inputStream->time_base, outputStream->time_base);
-    return av_interleaved_write_frame(av_outputCtx, packet.get());
+    if (packet->stream_index == 0) {
+        fprintf(stdout, "%s write video packet pts:%ld, rescale pts:%ld\n", __func__, pts, packet->pts);
+    } else if (packet->stream_index == 1) {
+        fprintf(stdout, "%s write audio packet pts:%ld, rescale pts:%ld\n", __func__, pts, packet->pts);
+    }
+    int ret = av_interleaved_write_frame(av_outputCtx, packet.get());
+    if (ret < 0) {
+        av_strerror(ret, errMsg, sizeof(errMsg));
+        fprintf(stderr, "%s av_interleaved_write_frame failed! errMsg:%s\n", __func__, errMsg);
+    }
+    return ret;
 }
 
 // 获取RTSP网络流，保存到文件;也可以获取其它协议的网络流，如RTMP,SRT
 int rtsp_save_to_file(void)
 {
+    std::string url = "rtsp://admin:admin@123@172.16.25.11:554/c9/b1772726400/e1772726430/replay/s0/";
+    std::string filepath = "E:/code/media/temp/dump.mp4";
     // 初始化
     ffmpeg_init();
     // 打开输入流
-    int ret = open_input(std::string("rtsp://192.168.16.230/live/test"));
+    int ret = open_input(url);
     if (ret < 0) {
         return -1;
     }
 
     // 打开输出流
-    ret = open_output(std::string("/tmp/test.ts"));
+    ret = open_output(filepath);
 
+    const int64_t max_duration = 30 * AV_TIME_BASE;
+    const int64_t start_time = av_gettime();
     // 循环从输入流中读包，写入到输出流中
     while (true) {
+        // 超时控制
+        if (av_gettime() - start_time > max_duration) {
+            fprintf(stdout, "%s reach max duration, stop pulling\n", __func__);
+            break;
+        }
         auto packet = read_packet_from_source();
         if (packet) {
             write_packet_to_target(packet);
-            fprintf(stdout, "%s writePacket success", __func__);
+            fprintf(stdout, "%s writePacket success\n", __func__);
         } else {
             fprintf(stderr, "%s writePacket failed!\n", __func__);
             return -1;
         }
     }
 
+    //写入文件尾，不使用该函数可能会导致最后写入的一些packet无法读取
+    av_write_trailer(av_outputCtx);
     return 0;
 }
 
@@ -205,7 +228,7 @@ void release(void)
     avformat_network_deinit();
 }
 
-int main(int argc, char* argv[]) {
+int main01(int argc, char* argv[]) {
     
     rtsp_save_to_file();
     release();
