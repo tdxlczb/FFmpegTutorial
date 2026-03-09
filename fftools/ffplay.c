@@ -1640,10 +1640,13 @@ retry:
             // is->frame_timer + delay是当前正在播放视频帧经过音视频同步之后应该结束播放的时间，也就是下一帧应该开始播放的时间，
             // 如果当前时间time还没有到当前播放视频帧的结束时间的话，继续播放当前帧，并计算当前帧还需要播放多长时间remaining_time。
             time= av_gettime_relative()/1000000.0;
-            if (time < is->frame_timer + delay) {
-                *remaining_time = FFMIN(is->frame_timer + delay - time, *remaining_time);
+            double actual_delay = is->frame_timer + delay - time;
+            if (actual_delay > 0) {
+                *remaining_time = FFMIN(actual_delay, *remaining_time);
+                //av_log(NULL, AV_LOG_ERROR, "video pts=%f, update=%f, sleep=%f\n", vp->pts, actual_delay, *remaining_time);
                 goto display;
             }
+            //av_log(NULL, AV_LOG_ERROR, "video pts=%f, update=%f, delay=%f\n", vp->pts, actual_delay, delay);
             // 如果当前正在播放的视频帧的播放时间已经足够了，那就播放下一帧，并更新is->frame_timer的值。
             is->frame_timer += delay;
             if (delay > 0 && time - is->frame_timer > AV_SYNC_THRESHOLD_MAX)

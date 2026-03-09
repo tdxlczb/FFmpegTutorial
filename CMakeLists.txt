@@ -29,7 +29,7 @@ if(MSVC)
 
     add_compile_options(/Zi) # pdb 格式
     add_compile_options(/sdl) # sdl 检查
-    
+    add_compile_options(/wd4100 /wd4189 /wd4505) # 设置警告选项
     # 额外优化
     # 从 VS 默认的项目的配置中抠出来的
     add_compile_options("$<$<NOT:$<CONFIG:Debug>>:/Oi>") # Intrinsic Function
