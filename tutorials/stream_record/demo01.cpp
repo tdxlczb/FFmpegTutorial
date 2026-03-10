@@ -69,8 +69,8 @@ int open_output(std::string ourl)
     // 错误日志
     char errMsg[1024] = { 0 };
 
-    // 输出上下文, ts流
-    int ret = avformat_alloc_output_context2(&av_outputCtx, nullptr, "mpegts", ourl.c_str());
+    // 输出上下文，格式："mpegts"(ts)，"matroska"(mkv)，"mov"，"avi"，"mp4"
+    int ret = avformat_alloc_output_context2(&av_outputCtx, nullptr, "mov", ourl.c_str());
     if (ret < 0) {
         av_strerror(ret, errMsg, sizeof(errMsg));
         fprintf(stderr, "%s avformat_alloc_output_context2 failed! errMsg:%s\n", __func__, errMsg);
@@ -149,20 +149,16 @@ int write_packet_to_target(std::shared_ptr<AVPacket> packet)
 {
     auto inputStream = av_inputCtx->streams[packet->stream_index];
     auto outputStream = av_outputCtx->streams[packet->stream_index];
-
+    int stream_index = packet->stream_index;
     int64_t pts = packet->pts;
-
     // 时间基转换
     av_packet_rescale_ts(packet.get(), inputStream->time_base, outputStream->time_base);
-    if (packet->stream_index == 0) {
-        fprintf(stdout, "%s write video packet pts:%ld, rescale pts:%ld\n", __func__, pts, packet->pts);
-    } else if (packet->stream_index == 1) {
-        fprintf(stdout, "%s write audio packet pts:%ld, rescale pts:%ld\n", __func__, pts, packet->pts);
-    }
+    if (stream_index == 0)
+        fprintf(stdout, "%s stream %d write packet pts:%ld, rescale pts:%ld\n", __func__, stream_index, pts, packet->pts);
     int ret = av_interleaved_write_frame(av_outputCtx, packet.get());
     if (ret < 0) {
         av_strerror(ret, errMsg, sizeof(errMsg));
-        fprintf(stderr, "%s av_interleaved_write_frame failed! errMsg:%s\n", __func__, errMsg);
+        fprintf(stderr, "%s stream %d av_interleaved_write_frame failed! errMsg:%s\n", __func__, stream_index, errMsg);
     }
     return ret;
 }
@@ -195,10 +191,6 @@ int rtsp_save_to_file(void)
         auto packet = read_packet_from_source();
         if (packet) {
             write_packet_to_target(packet);
-            fprintf(stdout, "%s writePacket success\n", __func__);
-        } else {
-            fprintf(stderr, "%s writePacket failed!\n", __func__);
-            return -1;
         }
     }
 

@@ -16,8 +16,8 @@ bool MP4Recorder::Init(std::vector<AVCodecParameters*> codecpars, const std::str
     // 错误日志
     char errMsg[1024] = { 0 };
 
-    // 输出上下文, ts流
-    int ret = avformat_alloc_output_context2(&m_outputCtx, nullptr, "mpegts", filepath.c_str());
+    // 输出上下文，格式："mpegts"(ts)，"matroska"(mkv)，"mov"，"avi"，"mp4"
+    int ret = avformat_alloc_output_context2(&m_outputCtx, nullptr, "mov", filepath.c_str());
     if (ret < 0) {
         av_strerror(ret, errMsg, sizeof(errMsg));
         fprintf(stderr, "%s avformat_alloc_output_context2 failed! errMsg:%s\n", __func__, errMsg);
@@ -77,9 +77,10 @@ bool MP4Recorder::DeInit()
     return true;
 }
 
-bool MP4Recorder::SaveOneFrame(AVMediaType mediaType, AVPacket* pkt)
+bool MP4Recorder::SaveOneFrame(AVMediaType mediaType, AVRational timebase, AVPacket* pkt)
 {
-    //av_packet_rescale_ts(pkt, pkt->time_base, m_outputCtx->streams[(int)mediaType]->time_base);
+    //必须调用av_packet_rescale_ts转换时间戳
+    av_packet_rescale_ts(pkt, timebase, m_outputCtx->streams[(int)mediaType]->time_base);
     if (pkt->pts == AV_NOPTS_VALUE) {
         pkt->pts = 0;
     }

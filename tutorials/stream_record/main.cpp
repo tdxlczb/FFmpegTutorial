@@ -17,7 +17,7 @@ extern "C" {
 
 int main(int argc, char* argv[])
 {
-    std::string url = "rtsp://admin:admin@123@172.16.25.11:554/c9/b1772726400/e1772726430/replay/s0/";
+    std::string url = "rtsp://admin:admin@123@172.16.25.11:554/c9/b1772640000/e1772726399/replay/s0/";
     std::string filepath = "E:/code/media/temp/dump.mp4";
 
     // 初始化FFmpeg的网络组件
@@ -86,7 +86,7 @@ int main(int argc, char* argv[])
         }
         if (packet) {
             //packet->time_base = av_inputCtx->streams[packet->stream_index]->time_base;
-            recorder->SaveOneFrame((AVMediaType)packet->stream_index, packet.get());
+            recorder->SaveOneFrame((AVMediaType)packet->stream_index, av_inputCtx->streams[packet->stream_index]->time_base, packet.get());
         }
     }
 
