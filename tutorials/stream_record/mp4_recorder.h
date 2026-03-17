@@ -20,7 +20,7 @@ public:
     bool SaveOneFrame(AVMediaType mediaType, AVRational timebase, AVPacket* pkt);
 private:
     AVFormatContext* m_outputCtx = nullptr;
-    std::mutex m_mtx;
+    std::mutex      m_mtx;
     bool            m_isInit = false;
     int64_t         m_iFirstVideoPts = AV_NOPTS_VALUE;
     int64_t         m_iFirstAudioPts = AV_NOPTS_VALUE;

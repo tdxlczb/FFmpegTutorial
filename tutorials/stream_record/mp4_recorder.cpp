@@ -79,6 +79,8 @@ bool MP4Recorder::DeInit()
 
 bool MP4Recorder::SaveOneFrame(AVMediaType mediaType, AVRational timebase, AVPacket* pkt)
 {
+    //不能并发操作AVFormatContext，需要加锁
+    std::lock_guard<std::mutex> lock(m_mtx);
     //必须调用av_packet_rescale_ts转换时间戳
     av_packet_rescale_ts(pkt, timebase, m_outputCtx->streams[(int)mediaType]->time_base);
     if (pkt->pts == AV_NOPTS_VALUE) {

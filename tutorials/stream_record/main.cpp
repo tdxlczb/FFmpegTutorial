@@ -5,6 +5,7 @@
 #include <cstring>
 #include <memory>
 #include <vector>
+#include <thread>
 #include "mp4_recorder.h"
 
 // FFmpeg 5.x 头文件（无需额外注册组件）
@@ -15,21 +16,14 @@ extern "C" {
 #include <libavcodec/avcodec.h>
 }
 
-int main(int argc, char* argv[])
+
+int rtsp_save_to_file(const std::string& url, const std::string& filepath)
 {
-    std::string url = "rtsp://admin:admin@123@172.16.25.11:554/c9/b1772640000/e1772726399/replay/s0/";
-    std::string filepath = "E:/code/media/temp/dump.mp4";
-
-    // 初始化FFmpeg的网络组件
-    avformat_network_init();
-    // 设置FFmpeg内部日志等级
-    av_log_set_level(AV_LOG_INFO);
-
     // 错误日志
     char errMsg[1024] = { 0 };
 
     // 输入格式上下文
-    AVFormatContext *av_inputCtx = avformat_alloc_context();
+    AVFormatContext* av_inputCtx = avformat_alloc_context();
     // 打开输入源
     int ret = avformat_open_input(&av_inputCtx, url.c_str(), nullptr, nullptr);
     if (ret < 0) {
@@ -66,8 +60,7 @@ int main(int argc, char* argv[])
     auto recorder = std::make_shared<MP4Recorder>();
     recorder->Init(codecpars, filepath);
 
-
-    const int64_t max_duration = 30 * AV_TIME_BASE;
+    const int64_t max_duration = 20 * AV_TIME_BASE;
     const int64_t start_time = av_gettime();
     // 循环从输入流中读包，写入到输出流中
     while (true) {
@@ -98,6 +91,39 @@ int main(int argc, char* argv[])
         avformat_free_context(av_inputCtx);
 
     recorder->DeInit();
+}
+
+int main(int argc, char* argv[])
+{
+    std::string url = "rtsp://admin:admin@123@172.16.25.11:554/c9/b1772640000/e1772726399/replay/s0/";
+    std::string filepath = "E:/code/media/temp/dump.mp4";
+
+    // 初始化FFmpeg的网络组件
+    avformat_network_init();
+    // 设置FFmpeg内部日志等级
+    av_log_set_level(AV_LOG_INFO);
+
+
+    std::vector<std::string> urls;
+    urls.push_back("rtsp://admin:admin!123@172.16.45.35:554/media/chn/1?transportmode=unicast&profile=Profile_1");
+    //urls.push_back("rtsp://admin:admin@123@172.16.45.172:554/c2/b1773302457/e1773302577/replay/s0/");
+    //urls.push_back("rtsp://admin:admin@123@172.16.45.172:554/c3/b1773302457/e1773302577/replay/s0/");
+
+    std::vector<std::thread> threads;
+    
+    for (size_t i = 0; i < urls.size(); i++)
+    {
+        std::string filepath = "E:/code/media/temp/dump" + std::to_string(i) + ".mp4";
+        auto th = std::thread([=]() {
+            rtsp_save_to_file(urls[i], filepath);
+            });
+        threads.push_back(std::move(th));
+    }
+    getchar();
+    for (size_t i = 0; i < urls.size(); i++)
+    {
+        threads[i].join();
+    }
 
     // 释放ffmpeg网络资源
     avformat_network_deinit();
