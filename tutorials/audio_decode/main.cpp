@@ -15,6 +15,127 @@ extern "C"
 #include <libswresample/swresample.h>
 }
 
+
+extern "C" {
+#include <libavfilter/avfilter.h>
+#include <libavfilter/buffersrc.h>
+#include <libavfilter/buffersink.h>
+#include <libavutil/opt.h>
+}
+
+class AudioSpeedFilter {
+private:
+    AVFilterGraph* filterGraph = nullptr;
+    AVFilterContext* inFilterCtx = nullptr;    // abuffer（输入）
+    AVFilterContext* outFilterCtx = nullptr;   // abuffersink（输出）
+    AVFilterContext* atempoCtx = nullptr;      // atempo（倍速）
+
+public:
+    // 初始化滤镜图
+    bool init(int sampleRate, AVSampleFormat sampleFmt, int64_t channelLayout, double speed) {
+        // 1. 创建滤镜图
+        filterGraph = avfilter_graph_alloc();
+        if (!filterGraph) return false;
+
+        // 2. 创建 abuffer 滤镜（接收解码后的音频帧）
+        const AVFilter* abuffer = avfilter_get_by_name("abuffer");
+        if (!abuffer) return false;
+
+        // 设置音频参数：采样率、格式、声道布局
+        char args[512];
+        snprintf(args, sizeof(args), "time_base=%d/1:sample_rate=%d:sample_fmt=%s:channel_layout=0x%" PRIx64,
+            1, sampleRate, av_get_sample_fmt_name(sampleFmt), channelLayout);
+
+        int ret = avfilter_graph_create_filter(&inFilterCtx, abuffer, "in", args, nullptr, filterGraph);
+        if (ret < 0) return false;
+
+        // 3. 创建 atempo 滤镜（核心倍速）
+        const AVFilter* atempo = avfilter_get_by_name("atempo");
+        if (!atempo) return false;
+
+        // 设置倍速参数（0.5~2.0，超过需串联多个）
+        char speedStr[32];
+        snprintf(speedStr, sizeof(speedStr), "%.2f", speed);
+
+        ret = avfilter_graph_create_filter(&atempoCtx, atempo, "atempo", speedStr, nullptr, filterGraph);
+        if (ret < 0) return false;
+
+        // 4. 创建 abuffersink 滤镜（获取处理后的帧）
+        const AVFilter* abuffersink = avfilter_get_by_name("abuffersink");
+        if (!abuffersink) return false;
+
+        ret = avfilter_graph_create_filter(&outFilterCtx, abuffersink, "out", nullptr, nullptr, filterGraph);
+        if (ret < 0) return false;
+
+        // 5. 连接滤镜：abuffer -> atempo -> abuffersink
+        ret = avfilter_link(inFilterCtx, 0, atempoCtx, 0);
+        if (ret < 0) return false;
+
+        ret = avfilter_link(atempoCtx, 0, outFilterCtx, 0);
+        if (ret < 0) return false;
+
+        // 6. 配置滤镜图
+        ret = avfilter_graph_config(filterGraph, nullptr);
+        if (ret < 0) return false;
+
+        return true;
+    }
+
+    // 发送音频帧到滤镜
+    bool sendFrame(AVFrame* frame) {
+        int ret = av_buffersrc_add_frame(inFilterCtx, frame);
+        return ret >= 0;
+    }
+
+    // 从滤镜获取处理后的帧
+    AVFrame* receiveFrame() {
+        AVFrame* filteredFrame = av_frame_alloc();
+        int ret = av_buffersink_get_frame(outFilterCtx, filteredFrame);
+
+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
+            av_frame_free(&filteredFrame);
+            return nullptr; // 需要更多输入或已经结束
+        }
+        if (ret < 0) {
+            av_frame_free(&filteredFrame);
+            return nullptr; // 错误
+        }
+
+        return filteredFrame; // 返回倍速后的音频帧
+    }
+
+    // 清理资源
+    void destroy() {
+        avfilter_graph_free(&filterGraph); // 会自动释放所有滤镜上下文
+    }
+};
+
+#include <fstream>
+static std::ofstream g_pcmFilter;
+void processAudioFrame(AVFrame* decodedFrame, AudioSpeedFilter& filter) {
+    // 1. 发送解码帧到滤镜
+    filter.sendFrame(decodedFrame);
+
+    // 2. 循环获取倍速后的帧（可能1输入对应多输出或少输出）
+    while (true) {
+        AVFrame* filteredFrame = filter.receiveFrame();
+        if (!filteredFrame) break; // 没有更多输出
+
+        // 3. 将 filteredFrame 送入音频播放设备
+        // audioDevice.play(filteredFrame);
+
+        if (g_pcmFilter.is_open())
+        {
+            size_t bufferSize = av_samples_get_buffer_size(filteredFrame->linesize, filteredFrame->channels, filteredFrame->nb_samples, (AVSampleFormat)filteredFrame->format, 1);
+            g_pcmFilter.write(reinterpret_cast<const char*>(filteredFrame->data[0]), bufferSize);
+            g_pcmFilter.flush();
+        }
+
+        // 4. 释放处理后的帧
+        av_frame_free(&filteredFrame);
+    }
+}
+
 struct CmdData
 {
     bool isDebug = false;
@@ -26,6 +147,12 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, Cm
 {
     LOG_INFO << "start decode audio:" << filePath;
     avformat_network_init();
+
+    g_pcmFilter.open("audio_convert_filter.pcm", std::ios::binary);
+    if (!g_pcmFilter.is_open())
+    {
+        LOG_ERROR << "open failed";
+    }
 
     // 打开文件
     AVFormatContext* formatContext = nullptr;
@@ -118,7 +245,7 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, Cm
     std::ofstream ofs2;
     if (cmd.isDebug)
     {
-        std::string outPath = R"(E:\code\media\temp\rtsp)";
+        std::string outPath = R"(E:\code\media\temp\)";
         auto        fmtName = av_get_sample_fmt_name(in_sfmt);
         std::string pcmPath = outPath + "_" + fmtName + "_" + std::to_string(in_channels) + "_" + std::to_string(in_sample_rate) + ".pcm";
         ofs1.open(pcmPath, std::ios::binary);
@@ -139,6 +266,9 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, Cm
         }
     }
 
+    AudioSpeedFilter filter;
+    filter.init(codecParameters->sample_rate, (AVSampleFormat)codecParameters->format, codecParameters->channel_layout, 2.0); // 设置1.5倍速
+
     int       frameIndex  = -1;
     int       packetIndex = -1;
     AVPacket* packet      = av_packet_alloc();
@@ -156,6 +286,8 @@ bool AudioDecode(const std::string& filePath, const DecodeCallback& callback, Cm
             }
             while (avcodec_receive_frame(codecContext, frame) >= 0)
             {
+                processAudioFrame(frame, filter);
+
                 frameIndex++;
 
                 if (needResample)
@@ -252,13 +384,13 @@ int main()
     LOG_INFO << "==================================";
     //test();
     std::string output    = "E:\\res\\mca\\output";
-    std::string filePath  = R"(D:\abcd\Hikvision_20250804205831_191254100_20250804205843_435776500.mp4)";
+    std::string filePath  = R"(rtsp://172.16.19.40:554/rtp/34020000001180000195_34020000001310000004_3?token=8mHubssH9NKUXevp)";
     std::string filePath1 = "E:\\res\\mca\\dvrStorage1231\\media\\edulyse-edge-windows\\1703591015324_6\\1703591015324_6_0_13348064620365.ts";
     std::string filePath2 = "E:\\res\\mca\\1704177600496_4_0_13348651242807.ts";
     std::string filePath3 = "E:\\res\\mca\\1703762903540_2\\1703762903540_2_0_13348236794018.ts";
     std::string filePath4 =
         R"(E:\res\mca\EdulyseEdgeWindows\dvrStorage\media\edulyse-edge-windows\1704196735104_2\1704196735104_2_0_13348670347631.ts)";
-    std::string filePath5 = R"(E:\res\mca\1704368128747_2\1704368128747_2_0_13348841750212.ts)";
+    std::string filePath5 = R"(E:\code\media\BaiduSyncdisk.mp4)";
     std::string filePath6 = R"(E:\res\mca\d6bda0290395c01e874326aa364426c3_SK_3999470_4003600.wav)";
     //std::string filePath = "E:\\res\\mca\\1701047259978_141\\1701047259978_141_0_1701047320961.ts";
     //std::string filePath = "E:\\res\\mca\\0.wav";
@@ -270,7 +402,7 @@ int main()
     CmdData data;
     data.isDebug = true;
     std::thread th([&]() {
-        AudioDecode(filePath, NULL, data);
+        AudioDecode(filePath5, NULL, data);
         });
     getchar();
     data.isStop = true;
