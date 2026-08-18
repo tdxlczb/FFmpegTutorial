@@ -710,12 +710,13 @@ int VideoRecord(const std::string& inputPath, const std::string& outputPath, Cmd
         }
 
         audio_encoder_ctx = avcodec_alloc_context3(audio_encoder);
-        audio_encoder_ctx->sample_fmt = audio_encoder->sample_fmts[0];
+        audio_encoder_ctx->sample_fmt = audio_encoder->sample_fmts[0]; //av_get_bytes_per_sample(sample_fmt);
         audio_encoder_ctx->bit_rate = 128000; //128kbps
         audio_encoder_ctx->sample_rate = 8000;
-        audio_encoder_ctx->channel_layout = AV_CH_LAYOUT_STEREO;
+        audio_encoder_ctx->channel_layout = AV_CH_LAYOUT_STEREO; //av_get_default_channel_layout(channels);
         audio_encoder_ctx->channels = av_get_channel_layout_nb_channels(audio_encoder_ctx->channel_layout);
         audio_encoder_ctx->time_base = { 1, audio_encoder_ctx->sample_rate };
+
         //这里计算编码一帧的采样点数，根据解码和编码的采样率进行转换
         //int max_out_nb_samples = av_rescale_rnd(audio_decoder_ctx->frame_size, audio_encoder_ctx->sample_rate, audio_decoder_ctx->sample_rate, AV_ROUND_UP);
         //audio_encoder_ctx->frame_size = max_out_nb_samples;

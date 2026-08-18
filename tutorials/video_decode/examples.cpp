@@ -1,4 +1,4 @@
-﻿#include "examples.h"
+#include "examples.h"
 #include <iostream>
 #include <fstream>
 #include <logger/logger.h>
@@ -17,18 +17,18 @@ static enum AVPixelFormat hw_pix_fmt = AV_PIX_FMT_NONE;
 static enum AVPixelFormat get_hw_format(AVCodecContext* ctx, const enum AVPixelFormat* pix_fmts)
 {
     const enum AVPixelFormat* p;
+    auto dev_ctx = ctx->hw_device_ctx;
 
     for (p = pix_fmts; *p != -1; p++) {
         if (*p == hw_pix_fmt)
             return *p;
     }
-
-    fprintf(stderr, "Failed to get HW surface format.\n");
+    LOG_INFO << "Failed to get HW surface format.\n";
     return AV_PIX_FMT_NONE;
 }
 
 // 函数：将视频转换为图片序列 ，只对mp4做了测试，其他格式未测试。
-bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
+bool VideoToImages(int threadId, const std::string& filePath, const std::string& outputFolder)
 {
     LOG_INFO << "start decode:" << filePath << std::endl;
     avformat_network_init();
@@ -38,11 +38,11 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
     int ret;
     {//配置该流的ffmpeg设置
         AVDictionary* pOptDict = NULL;
-        av_dict_set(&pOptDict, "stimeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
-        av_dict_set(&pOptDict, "timeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
-        av_dict_set(&pOptDict, "buffer_size", "8192000", 0);//控制解码器或编码器的内部缓冲区大小,配置8M缓冲以适应高分辨率视频
-        av_dict_set(&pOptDict, "recv_buffer_size", "4096000", 0);     // 防止花屏, max 4M.:用于控制网络接收缓冲区大小，适用于高带宽或高延迟的网络环境
-        av_dict_set(&pOptDict, "tune", "stillimage,fastdecode,zerolatency", 0);//优化静态图像编码,快速解码和低延时传输
+        //av_dict_set(&pOptDict, "stimeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
+        //av_dict_set(&pOptDict, "timeout", "5000000", 0);//适应延迟网络，设置5s的等待链接时间
+        //av_dict_set(&pOptDict, "buffer_size", "8192000", 0);//控制解码器或编码器的内部缓冲区大小,配置8M缓冲以适应高分辨率视频
+        //av_dict_set(&pOptDict, "recv_buffer_size", "4096000", 0);     // 防止花屏, max 4M.:用于控制网络接收缓冲区大小，适用于高带宽或高延迟的网络环境
+        //av_dict_set(&pOptDict, "tune", "stillimage,fastdecode,zerolatency", 0);//优化静态图像编码,快速解码和低延时传输
         av_dict_set(&pOptDict, "rtsp_transport", "tcp", 0);//tcp拉流，尽量保证不丢包
         ret = avformat_open_input(&formatContext, filePath.c_str(), nullptr, &pOptDict);
         av_dict_free(&pOptDict);
@@ -70,11 +70,16 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
 
     // 寻找视频流
     int videoStreamIndex = -1;
+    int audioStreamIndex = -1;
     for (unsigned int i = 0; i < formatContext->nb_streams; ++i)
     {
         if (formatContext->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_VIDEO)
         {
             videoStreamIndex = i;
+        }
+        if (formatContext->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO)
+        {
+            audioStreamIndex = i;
             break;
         }
     }
@@ -104,7 +109,9 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
         avformat_network_deinit();
         return false;
     }
-    std::string hwdevice_name = "dxva2";
+    std::string hwdevice_name = "";
+    //std::string hwdevice_name = "dxva2";
+    //std::string hwdevice_name = "d3d11va";
     AVHWDeviceType hwDeviceType = AV_HWDEVICE_TYPE_NONE;
     if (!hwdevice_name.empty()) {
         hwDeviceType = av_hwdevice_find_type_by_name(hwdevice_name.c_str());
@@ -127,17 +134,14 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
                 break;
             }
         }
-        //如果上下文已经有了硬解码，那么将其取消引用，准备重新创建
-        if (codecContext->hw_device_ctx) {
-            av_buffer_unref(&codecContext->hw_device_ctx);
-            codecContext->hw_device_ctx = nullptr;
-        }
+
         // 创建硬解码器
-        ret = av_hwdevice_ctx_create(&codecContext->hw_device_ctx, hwDeviceType, nullptr, nullptr, 0);
+        ret = av_hwdevice_ctx_create(&hw_device_ctx, hwDeviceType, nullptr, nullptr, 0);
         if (AVERROR(ret)) {
             //qDebug() << "av_hwdevice_ctx_create failed," << QString("%1:%2").arg(ret).arg(av_error_qstring(ret));
             hwDeviceType = AV_HWDEVICE_TYPE_NONE;
         }
+        codecContext->hw_device_ctx = av_buffer_ref(hw_device_ctx);
         codecContext->get_format = get_hw_format;
     }
     codecContext->thread_count = 2;
@@ -167,11 +171,12 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
     // 获取总的帧数量
     auto      frameCount  = videoStream->nb_frames;
     int       gopSize     = codecContext->gop_size;
-    //auto      dstFormat   = AV_PIX_FMT_BGR24;
-    auto      dstFormat   = AV_PIX_FMT_YUV420P;
+    auto      dstFormat   = AV_PIX_FMT_BGR24;
+    //auto      dstFormat   = AV_PIX_FMT_YUV420P;
 
     LOG_INFO << "fps=" << (int) fps << ", frameCount=" << frameCount << std::endl;
     SwsContext* sws_ctx = nullptr;
+    ////提前从AVCodecContext获取宽高可能会为0
     //SwsContext* sws_ctx = sws_getContext(
     //    codecContext->width, codecContext->height, AV_PIX_FMT_NV12, codecContext->width, codecContext->height, dstFormat, SWS_BILINEAR,
     //    NULL, NULL, NULL
@@ -201,9 +206,18 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
     //av_image_alloc(frameRGB->data, frameRGB->linesize, codecContext->width, codecContext->height, destFormat, AV_INPUT_BUFFER_PADDING_SIZE);
     //注意，使用av_frame_get_buffer分配的内存是不连续的，例如data[0],data[1]不在同一块内存中，在保存yuv这样的多lines的数据要注意取数据的方式
 
+    AVFrame* frameDst = av_frame_alloc();
+    frameDst->width = codecContext->width;
+    frameDst->height = codecContext->height;
+    frameDst->format = dstFormat;
+    av_image_alloc(frameDst->data, frameDst->linesize, frameDst->width, frameDst->height, (AVPixelFormat)frameDst->format, AV_INPUT_BUFFER_PADDING_SIZE);
+
     // 读取视频帧并保存为图片
-    int       frameIndex  = -1;
-    int       packetIndex = -1;
+    int       frameIndex  = 0;
+    int       videoPacketIndex = 0;
+    int       audioPacketIndex = 0;
+    int64_t   videoFirstPts = -1;
+    int64_t   audioFirstPts = -1;
     AVPacket* packet      = av_packet_alloc();
     //AVFrame*  frame       = av_frame_alloc();
     //AVFrame*  hwframe     = av_frame_alloc();
@@ -217,20 +231,36 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
             PRINT_FUNC_ERROR(av_read_frame, ret);
             break;
         }
+
+        if (packet->stream_index == videoStreamIndex) {
+            videoPacketIndex++;
+            bool isKey = packet->flags & AV_PKT_FLAG_KEY;
+            int64_t npts = packet->pts == AV_NOPTS_VALUE ? 0 : packet->pts;
+            if (videoFirstPts < 0) {
+                videoFirstPts = npts;
+            }
+            double ts = (npts - videoFirstPts) / (double)90000;
+            std::cout << "video packetIndex:" << videoPacketIndex << ", ts:" << ts << ", size:" << packet->size << ", isKey:" << isKey << std::endl;
+        } else if (packet->stream_index == audioStreamIndex) {
+            audioPacketIndex++;
+            int64_t npts = packet->pts == AV_NOPTS_VALUE ? 0 : packet->pts;
+            if (audioFirstPts < 0) {
+                audioFirstPts = npts;
+            }
+            double ts = (npts - audioFirstPts) / (double)8000;
+            std::cout << "========= audio packetIndex:" << audioPacketIndex << ", ts:" << ts << ", size:" << packet->size << std::endl;
+        }
+        continue;
         if (packet->stream_index == videoStreamIndex)
         {
-            packetIndex++;
-            {
-                auto duration = std::chrono::system_clock::now().time_since_epoch();
-                auto ts       = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-                LOG_INFO << "packetIndex:" << packetIndex << ", packetFlags:" << packet->flags << ", ts:" << ts << ", pts:"<< packet->pts << ", dts:" << packet->dts
-                         << std::endl;
-            }
-            //if (packet.flags != AV_PKT_FLAG_KEY)
+            videoPacketIndex++;
             //{
-            //    continue;
+            //    auto duration = std::chrono::system_clock::now().time_since_epoch();
+            //    auto ts       = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
+            //    LOG_INFO << "video packetIndex:" << videoPacketIndex << ", packetFlags:" << packet->flags << ", ts:" << ts << ", pts:"<< packet->pts << ", dts:" << packet->dts
+            //             << std::endl;
             //}
-
+            bool isKeyFrame = packet->flags & AV_PKT_FLAG_KEY;
             ret = avcodec_send_packet(codecContext, packet);
             av_packet_unref(packet);
             if (ret < 0)
@@ -249,11 +279,21 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
                 ret = avcodec_receive_frame(codecContext, tempframe);
                 if (ret < 0) 
                 {
-                    PRINT_FUNC_ERROR(avcodec_receive_frame, ret);
+                    //PRINT_FUNC_ERROR(avcodec_receive_frame, ret);
                     av_frame_free(&hwframe);
                     av_frame_free(&tempframe);
                     break;
                 }
+
+                //{
+                //    frameIndex++;
+                //    LOG_INFO << threadId << " frameIndex:" << frameIndex << ", keyFrame:" << isKeyFrame << std::endl;
+
+                //    av_frame_free(&hwframe);
+                //    av_frame_free(&tempframe);
+                //    continue;
+                //}
+
                 if (tempframe->format == hw_pix_fmt) {
                     /* retrieve data from GPU to CPU */
                     if ((ret = av_hwframe_transfer_data(hwframe, tempframe, 0)) < 0) {
@@ -270,7 +310,7 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
                 {
                     auto duration = std::chrono::system_clock::now().time_since_epoch();
                     auto ts       = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-                    LOG_INFO << "packetIndex:" << packetIndex << ", frameIndex:" << frameIndex
+                    LOG_INFO << "video packetIndex:" << videoPacketIndex << ", frameIndex:" << frameIndex
                              << ", keyFrame:" << frame->key_frame << ", ts:" << ts << std::endl;
                 }
                 //if (frameIndex % 5 != 0)
@@ -288,28 +328,30 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
                 //uint8_t* bufferRGB = (uint8_t*)av_malloc(numBytes * sizeof(uint8_t)); // 注意，这里给frameRGB申请的buffer，需要单独释放
                 //av_image_fill_arrays(frameRGB->data, frameRGB->linesize, bufferRGB, dstFormat, frame->width, frame->height, 1);
                 int ret = sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, frameRGB->data, frameRGB->linesize);
+                //int ret = sws_scale(sws_ctx, frame->data, frame->linesize, 0, frame->height, frameDst->data, frameDst->linesize);
                 if (ret)
                 {
                     static int frameIndex = 0;
-                    cv::Mat yuv_mat = cv::Mat(frame->height * 3 / 2, frame->width, CV_8UC1, frameRGB->data[0], frameRGB->linesize[0]);
-                    // 转换为RGB
-                    cv::Mat rgb_mat;
-                    cv::cvtColor(yuv_mat, rgb_mat, cv::COLOR_YUV2BGR_I420);
-                    char filename[100];
-                    sprintf(filename, "E:\\code\\media\\temp\\%d.jpg", frameIndex);
-                    cv::imwrite(filename, rgb_mat);
-                    frameIndex++;
-
-                    //// 保存图片
+                    //cv::Mat yuv_mat = cv::Mat(frame->height * 3 / 2, frame->width, CV_8UC1, frameRGB->data[0], frameRGB->linesize[0]);
+                    //// 转换为RGB
+                    //cv::Mat rgb_mat;
+                    //cv::cvtColor(yuv_mat, rgb_mat, cv::COLOR_YUV2BGR_I420);
                     //char filename[100];
-                    //sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frame->pts);
-                    //cv::Mat mat = cv::Mat(frame->height, frame->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
-                    //cv::imwrite(filename, mat);
+                    //sprintf(filename, "E:\\code\\media\\temp\\%d.jpg", frameIndex);
+                    //cv::imwrite(filename, rgb_mat);
+                    //frameIndex++;
+
+                    // 保存图片
+                    char filename[100];
+                    sprintf(filename, "%s/%d.jpg", outputFolder.c_str(), frameIndex);
+                    cv::Mat mat = cv::Mat(frame->height, frame->width, CV_8UC3, frameRGB->data[0], frameRGB->linesize[0]);
+                    cv::imwrite(filename, mat);
+                    frameIndex++;
                 }
                 {
                     auto duration = std::chrono::system_clock::now().time_since_epoch();
                     auto ts = std::chrono::duration_cast<std::chrono::milliseconds>(duration).count();
-                    LOG_INFO << "packetIndex:" << packetIndex << ", frameIndex:" << frameIndex << ", convert rgba" << ", ts:" << ts << std::endl;
+                    LOG_INFO << "video packetIndex:" << videoPacketIndex << ", frameIndex:" << frameIndex << ", convert rgba" << ", ts:" << ts << std::endl;
                 }
 
                 av_frame_free(&hwframe);
@@ -324,6 +366,8 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
     //av_frame_free(&hwframe);
     av_frame_free(&frameRGB);
     av_freep(&bufferRGB); //释放av_malloc申请的buffer，需要单独释放
+    av_freep(&frameDst[0]);
+    av_frame_free(&frameDst);
     sws_freeContext(sws_ctx);
     avcodec_free_context(&codecContext);
     avformat_close_input(&formatContext);

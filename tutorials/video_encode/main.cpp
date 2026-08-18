@@ -1,4 +1,4 @@
-﻿#include <iostream>
+#include <iostream>
 #include <string>
 #include <cstdint>
 #include <cstdio>
@@ -61,7 +61,7 @@ int main()
     InitLogger();
     LOG_INFO << "==================================";
     std::string output    = R"(E:\code\media\temp)";
-    std::string filePath  = R"(rtsp://172.16.47.126:554/rtp/34020000001320000012_34020000001320000001_4?token=j7pFCdfLxc7BQyR1)";
+    std::string filePath  = R"(rtsp://admin:admin@123@172.16.25.11:554/c9/b1772726400/e1772727119/replay/s0/)";
     std::string filePath2 = R"(rtsp://172.16.19.40:554/rtp/34020000001110000001_34020000001320000001_4?token=HsVQhrh4RQ5U53am)";
     std::string filePath3 = R"(E:\code\media\temp\dump1.mp4)";
     std::string filePath4 = R"(rtsp://127.0.0.1/live/test)";
