@@ -24,4 +24,5 @@ private:
     bool            m_isInit = false;
     int64_t         m_iFirstVideoPts = AV_NOPTS_VALUE;
     int64_t         m_iFirstAudioPts = AV_NOPTS_VALUE;
+    bool            m_isWaitRecord = false; //是否等待录制，用于等待第一个关键帧
 };

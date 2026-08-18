@@ -46,7 +46,7 @@ int rtsp_save_to_file(const std::string& url, const std::string& filepath)
         return -2;
     }
 
-    fprintf(stdout, "%s open %s success!", __func__, url);
+    fprintf(stdout, "%s open %s success!", __func__, url.c_str());
     if (ret < 0) {
         return -1;
     }
@@ -61,6 +61,7 @@ int rtsp_save_to_file(const std::string& url, const std::string& filepath)
     recorder->Init(codecpars, filepath);
 
     const int64_t max_duration = 20 * AV_TIME_BASE;
+    const int64_t wait_duration = 5 * AV_TIME_BASE;
     const int64_t start_time = av_gettime();
     // 循环从输入流中读包，写入到输出流中
     while (true) {
@@ -71,13 +72,13 @@ int rtsp_save_to_file(const std::string& url, const std::string& filepath)
         }
         std::shared_ptr<AVPacket> packet(av_packet_alloc(), [](AVPacket* p) {av_packet_free(&p); });
         // 从输入流中获取一个编码后的包 PES包
-        int ret = av_read_frame(av_inputCtx, packet.get());
+        ret = av_read_frame(av_inputCtx, packet.get());
         if (ret < 0) {
             av_strerror(ret, errMsg, sizeof(errMsg));
             fprintf(stderr, "%s avformat_write_header failed! errMsg:%s\n", __func__, errMsg);
             continue;
         }
-        if (packet) {
+        if (packet && av_gettime() - start_time > wait_duration) {
             //packet->time_base = av_inputCtx->streams[packet->stream_index]->time_base;
             recorder->SaveOneFrame((AVMediaType)packet->stream_index, av_inputCtx->streams[packet->stream_index]->time_base, packet.get());
         }
@@ -91,12 +92,14 @@ int rtsp_save_to_file(const std::string& url, const std::string& filepath)
         avformat_free_context(av_inputCtx);
 
     recorder->DeInit();
+
+    return 0;
 }
 
 int main(int argc, char* argv[])
 {
-    std::string url = "rtsp://admin:admin@123@172.16.25.11:554/c9/b1772640000/e1772726399/replay/s0/";
-    std::string filepath = "E:/code/media/temp/dump.mp4";
+    //std::string url = "rtsp://admin:admin@123@172.16.25.11:554/c9/b1772640000/e1772726399/replay/s0/";
+    //std::string filepath = "E:/code/media/temp/dump.mp4";
 
     // 初始化FFmpeg的网络组件
     avformat_network_init();
@@ -105,7 +108,7 @@ int main(int argc, char* argv[])
 
 
     std::vector<std::string> urls;
-    urls.push_back("rtsp://admin:admin!123@172.16.45.35:554/media/chn/1?transportmode=unicast&profile=Profile_1");
+    urls.push_back("rtsp://admin:admin@123@172.16.45.173:554/unicast/c8/s1/live");
     //urls.push_back("rtsp://admin:admin@123@172.16.45.172:554/c2/b1773302457/e1773302577/replay/s0/");
     //urls.push_back("rtsp://admin:admin@123@172.16.45.172:554/c3/b1773302457/e1773302577/replay/s0/");
 

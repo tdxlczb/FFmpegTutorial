@@ -79,6 +79,14 @@ bool MP4Recorder::DeInit()
 
 bool MP4Recorder::SaveOneFrame(AVMediaType mediaType, AVRational timebase, AVPacket* pkt)
 {
+    //在等待录制的情况下，直到遇到一个视频关键帧才取消等待开始正式录制以预防花屏
+    if (m_isWaitRecord && mediaType == AVMEDIA_TYPE_VIDEO && (pkt->flags & AV_PKT_FLAG_KEY)) {
+        m_isWaitRecord = false;
+    }
+    if (m_isWaitRecord) {
+        return false;
+    }
+
     //不能并发操作AVFormatContext，需要加锁
     std::lock_guard<std::mutex> lock(m_mtx);
     //必须调用av_packet_rescale_ts转换时间戳

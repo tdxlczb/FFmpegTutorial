@@ -427,10 +427,7 @@ bool VideoToImages(const std::string& filePath, const std::string& outputFolder)
         {
             packetIndex++;
             std::cout << "packetIndex:" << packetIndex << ", packetFlags:" << packet->flags << std::endl;
-            //if (packet.flags != AV_PKT_FLAG_KEY)
-            //{
-            //    continue;
-            //}
+            bool isKeyFrame = packet->flags & AV_PKT_FLAG_KEY;
 
             if (avcodec_send_packet(codecContext, packet) < 0)
             {
